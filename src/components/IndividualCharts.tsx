@@ -1,14 +1,5 @@
 import React, { useMemo } from 'react';
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -30,13 +21,7 @@ interface Props {
   metricVisibility: { CO2: boolean; Temp: boolean; Hum: boolean; Sound: boolean };
 }
 
-export default function IndividualCharts({
-                                           samples,
-                                           probes,
-                                           locations,
-                                           activeProbes,
-                                           metricVisibility,
-                                         }: Props) {
+export default function IndividualCharts({ samples, probes, locations, activeProbes, metricVisibility }: Props) {
   // --- Group samples by probe ---
   const seriesByProbe = useMemo(() => {
     const groups: Record<string, Sample[]> = {};
@@ -59,9 +44,7 @@ export default function IndividualCharts({
   }, [seriesByProbe, probes, locations]);
 
   // --- Which metrics to show ---
-  const metrics = Object.entries(metricInfo).filter(
-    ([key]) => metricVisibility[key as keyof typeof metricInfo]
-  );
+  const metrics = Object.entries(metricInfo).filter(([key]) => metricVisibility[key as keyof typeof metricInfo]);
 
   // --- Render ---
   return (
@@ -98,9 +81,13 @@ export default function IndividualCharts({
                   }));
                   return (
                     <div style={{ background: '#222', color: '#fff', padding: 8, borderRadius: 4 }}>
-                      <div><strong>{new Date(label).toLocaleTimeString()}</strong></div>
+                      <div>
+                        <strong>{new Date(label).toLocaleTimeString()}</strong>
+                      </div>
                       {lines.map((l, i) => (
-                        <div key={i} style={{ color: l.color }}>{l.name}: {l.value}</div>
+                        <div key={i} style={{ color: l.color }}>
+                          {l.name}: {l.value}
+                        </div>
                       ))}
                     </div>
                   );

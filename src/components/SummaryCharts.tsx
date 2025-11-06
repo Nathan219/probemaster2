@@ -1,15 +1,5 @@
 import React, { useMemo } from 'react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -25,7 +15,10 @@ const metricInfo = {
 function paletteForArea(area: string) {
   const areas = ['10th Floor', 'Tea Room', 'Pool', 'Unassigned'];
   const colors = ['#7E57C2', '#26A69A', '#FFB74D', '#42A5F5'];
-  const idx = Math.max(0, areas.findIndex((a) => a === area));
+  const idx = Math.max(
+    0,
+    areas.findIndex((a) => a === area)
+  );
   return colors[idx % colors.length];
 }
 
