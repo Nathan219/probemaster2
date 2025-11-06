@@ -139,7 +139,7 @@ function App() {
 
   async function startReading(p: SerialPort) {
     const textDecoder = new TextDecoderStream()
-    const readableClosed = p.readable!.pipeTo(textDecoder.writable)
+    const readableClosed = p.readable!.pipeTo(textDecoder.writable as WritableStream<Uint8Array>)
     const reader = (textDecoder.readable as ReadableStream<string>).getReader()
     readerRef.current = reader as any
 
