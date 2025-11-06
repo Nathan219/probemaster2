@@ -1,7 +1,7 @@
 /**
  * @see https://prettier.io/docs/configuration
  */
-const config = {
+export default {
   arrowParens: 'always',
   bracketSameLine: false,
   printWidth: 120,
@@ -9,5 +9,6 @@ const config = {
   singleQuote: true,
   tabWidth: 2,
   trailingComma: 'es5',
+  endOfLine: 'lf',
 };
-module.exports = config;
+
