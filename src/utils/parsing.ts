@@ -1,4 +1,4 @@
-import { Sample, AreaInfo, Stats, Pixel, Threshold } from './types';
+import { Sample, AreaInfo, Stats, Pixel, Threshold, LocationName, Measurement } from './types';
 
 export function parseLine(l: string) {
   const m = l.match(/^([^:]+):\s*(.*)$/);
@@ -35,28 +35,75 @@ export function toCSV(rows: Sample[]) {
 }
 
 // Serial port writing
+let writeQueue: Array<{ port: SerialPort; command: string; resolve: () => void; reject: (e: Error) => void }> = [];
+let isWriting = false;
+
+async function processWriteQueue() {
+  if (isWriting || writeQueue.length === 0) return;
+
+  isWriting = true;
+  while (writeQueue.length > 0) {
+    const { port, command, resolve, reject } = writeQueue.shift()!;
+
+    try {
+      if (!port.writable) {
+        reject(new Error('Serial port is not writable'));
+        continue;
+      }
+
+      const encoder = new TextEncoder();
+      const writer = port.writable.getWriter();
+      try {
+        await writer.write(encoder.encode(command + '\r\n'));
+        await writer.ready;
+        resolve();
+      } finally {
+        writer.releaseLock();
+      }
+    } catch (e) {
+      reject(e as Error);
+    }
+  }
+  isWriting = false;
+}
+
 export async function sendSerialCommand(port: SerialPort, command: string): Promise<void> {
-  if (!port.writable) {
-    throw new Error('Serial port is not writable');
-  }
-  const encoder = new TextEncoder();
-  const writer = port.writable.getWriter();
-  try {
-    await writer.write(encoder.encode(command + '\r\n'));
-  } finally {
-    writer.releaseLock();
-  }
+  return new Promise((resolve, reject) => {
+    writeQueue.push({ port, command, resolve, reject });
+    processWriteQueue();
+  });
+}
+
+export function releaseSerialWriter(): void {
+  // No-op since we release immediately after each write
 }
 
 // Command center parsing functions
 export function parseGetAreas(line: string): AreaInfo | null {
   // Format: Area Name, Location Name, Probe ID
-  // Could be multiple lines or comma-separated on one line
+  // Should NOT match sample data format like: [UART2] dfe8: CO2:640,Temp:27.34,...
+  // Check that it doesn't contain colons (sample data has measurement:value pairs)
+  // and doesn't start with brackets
+  if (line.includes(':') || line.trim().startsWith('[')) {
+    return null;
+  }
+
   const parts = line.split(',').map((p) => p.trim());
-  if (parts.length >= 3) {
+  if (parts.length === 3) {
+    // Also check that it doesn't contain measurement keywords
+    const lowerLine = line.toLowerCase();
+    if (
+      lowerLine.includes('co2') ||
+      lowerLine.includes('temp') ||
+      lowerLine.includes('hum') ||
+      lowerLine.includes('sound')
+    ) {
+      return null;
+    }
+
     return {
       areaName: parts[0],
-      locationName: parts[1],
+      locationName: parts[1] as LocationName,
       probeId: parts[2],
     };
   }
@@ -91,7 +138,7 @@ export function parseGetPixels(line: string): Pixel | null {
     if (pixel >= 0 && pixel <= 6) {
       return {
         areaName: match[1],
-        measurement: match[2] as 'CO2' | 'HUM' | 'TEMP' | 'DB',
+        measurement: match[2] as Measurement,
         pixel,
       };
     }
@@ -107,7 +154,7 @@ export function parseGetThreshold(line: string): Threshold | null {
     if (values.length === 6 && values.every((v) => v >= -1 && v <= 100)) {
       return {
         areaName: match[1],
-        measurement: match[2] as 'CO2' | 'HUM' | 'TEMP' | 'DB',
+        measurement: match[2] as Measurement,
         values,
       };
     }
@@ -118,7 +165,7 @@ export function parseGetThreshold(line: string): Threshold | null {
 export function parseAcknowledgment(line: string): {
   type: 'OVERRIDE' | 'THRESHOLD' | 'PROBE';
   areaName?: string;
-  measurement?: 'CO2' | 'HUM' | 'TEMP' | 'DB';
+  measurement?: Measurement;
   pixel?: number;
   value?: number;
   probeId?: string;
@@ -146,7 +193,7 @@ export function parseAcknowledgment(line: string): {
     return {
       type: 'THRESHOLD',
       areaName: match[1],
-      measurement: match[2] as 'CO2' | 'HUM' | 'TEMP' | 'DB',
+      measurement: match[2] as Measurement,
       pixel: parseInt(match[3], 10),
       value: parseInt(match[4], 10),
     };
