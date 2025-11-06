@@ -157,7 +157,7 @@ export default function CommandCenter({
                 {areas.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} align="center">
-                      No areas data
+                      No area data
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -200,7 +200,7 @@ export default function CommandCenter({
                 {stats.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} align="center">
-                      No stats data
+                      No stats
                     </TableCell>
                   </TableRow>
                 ) : (
