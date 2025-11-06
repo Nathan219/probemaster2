@@ -5,9 +5,19 @@ import Filters from './components/Filters';
 import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
 import { ProbesPanel, LocationsPanel, LatestReadings } from './components/Lists';
+import CommandCenter from './components/CommandCenter';
 import { makeTheme } from './theme';
-import { Sample, Probe, Location } from './utils/types';
-import { parseLine, toCSV } from './utils/parsing';
+import { Sample, Probe, Location, AreaInfo, Stats, Pixel, Threshold } from './utils/types';
+import {
+  parseLine,
+  toCSV,
+  sendSerialCommand,
+  parseGetAreas,
+  parseGetStats,
+  parseGetPixels,
+  parseGetThreshold,
+  parseAcknowledgment,
+} from './utils/parsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
 import { createSimSetup, makeSimTickers } from './sim';
@@ -37,12 +47,21 @@ function App() {
   const [locations, setLocations] = useState<Record<string, Location>>({});
   const [areas, setAreas] = useState<Set<string>>(new Set());
 
+  // Command Center Data
+  const [commandCenterAreas, setCommandCenterAreas] = useState<AreaInfo[]>([]);
+  const [commandCenterStats, setCommandCenterStats] = useState<Stats[]>([]);
+  const [commandCenterPixels, setCommandCenterPixels] = useState<Pixel[]>([]);
+  const [commandCenterThresholds, setCommandCenterThresholds] = useState<Threshold[]>([]);
+
   // Filters
   const [metricVisibility, setMetricVisibility] = useState({ CO2: true, Temp: true, Hum: true, Sound: true });
   const [activeAreas, setActiveAreas] = useState<Set<string>>(new Set(['All']));
   const [activeProbes, setActiveProbes] = useState<Set<string>>(new Set());
   const [aggType, setAggType] = useState<'avg' | 'min' | 'max'>('avg');
   const [showBand, setShowBand] = useState<boolean>(true);
+
+  // View state
+  const [currentView, setCurrentView] = useState<'dashboard' | 'commandCenter'>('dashboard');
 
   const pending = useRef<Sample[]>([]);
   useEffect(() => {
@@ -115,8 +134,123 @@ function App() {
     [samples, visibleProbeIds]
   );
 
+  // Command Center refresh functions (defined before onLine to avoid hoisting issues)
+  const refreshAreas = async () => {
+    if (!port) return;
+    try {
+      await sendSerialCommand(port, 'GET AREAS');
+    } catch (e) {
+      console.error('Failed to send GET AREAS:', e);
+    }
+  };
+
+  const refreshStats = async () => {
+    if (!port) return;
+    try {
+      await sendSerialCommand(port, 'GET STATS');
+    } catch (e) {
+      console.error('Failed to send GET STATS:', e);
+    }
+  };
+
+  const refreshPixels = async () => {
+    if (!port) return;
+    try {
+      await sendSerialCommand(port, 'GET PIXELS');
+    } catch (e) {
+      console.error('Failed to send GET PIXELS:', e);
+    }
+  };
+
+  const refreshThresholds = async () => {
+    if (!port) return;
+    try {
+      await sendSerialCommand(port, 'GET THRESHOLD');
+    } catch (e) {
+      console.error('Failed to send GET THRESHOLD:', e);
+    }
+  };
+
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
+
+    // Try parsing command center responses first
+    const areaInfo = parseGetAreas(line);
+    if (areaInfo) {
+      setCommandCenterAreas((prev) => {
+        // Check if this area already exists, update or add
+        const idx = prev.findIndex(
+          (a) =>
+            a.areaName === areaInfo.areaName &&
+            a.locationName === areaInfo.locationName &&
+            a.probeId === areaInfo.probeId
+        );
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = areaInfo;
+          return updated;
+        }
+        return [...prev, areaInfo];
+      });
+      return;
+    }
+
+    const stats = parseGetStats(line);
+    if (stats) {
+      setCommandCenterStats((prev) => {
+        const idx = prev.findIndex((s) => s.areaName === stats.areaName && s.location === stats.location);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = stats;
+          return updated;
+        }
+        return [...prev, stats];
+      });
+      return;
+    }
+
+    const pixel = parseGetPixels(line);
+    if (pixel) {
+      setCommandCenterPixels((prev) => {
+        const idx = prev.findIndex((p) => p.areaName === pixel.areaName && p.measurement === pixel.measurement);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = pixel;
+          return updated;
+        }
+        return [...prev, pixel];
+      });
+      return;
+    }
+
+    const threshold = parseGetThreshold(line);
+    if (threshold) {
+      setCommandCenterThresholds((prev) => {
+        const idx = prev.findIndex((t) => t.areaName === threshold.areaName && t.measurement === threshold.measurement);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = threshold;
+          return updated;
+        }
+        return [...prev, threshold];
+      });
+      return;
+    }
+
+    const ack = parseAcknowledgment(line);
+    if (ack) {
+      // Handle acknowledgments - refresh the relevant data
+      if (ack.type === 'OVERRIDE') {
+        refreshStats();
+      } else if (ack.type === 'THRESHOLD') {
+        refreshThresholds();
+      } else if (ack.type === 'PROBE') {
+        refreshAreas();
+      }
+      return;
+    }
+
+    // Fall back to regular sample parsing
     const parsed = parseLine(line);
     if (!parsed) return;
     pending.current.push(parsed);
@@ -388,6 +522,39 @@ function App() {
     reader.readAsText(file);
   }
 
+  // Command Center SET command handlers
+  const handleSetOverride = async (areaName: string, type: 'MIN' | 'MAX', value: number) => {
+    if (!port) return;
+    try {
+      await sendSerialCommand(port, `SET OVERRIDE ${areaName} ${type} ${value}`);
+    } catch (e) {
+      console.error('Failed to send SET OVERRIDE:', e);
+    }
+  };
+
+  const handleSetThreshold = async (
+    areaName: string,
+    measurement: 'CO2' | 'HUM' | 'TEMP' | 'DB',
+    pixelNum: number,
+    value: number
+  ) => {
+    if (!port) return;
+    try {
+      await sendSerialCommand(port, `SET THRESHOLD ${areaName} ${measurement} ${pixelNum} ${value}`);
+    } catch (e) {
+      console.error('Failed to send SET THRESHOLD:', e);
+    }
+  };
+
+  const handleSetProbe = async (probeId: string, areaName: string, location: string) => {
+    if (!port) return;
+    try {
+      await sendSerialCommand(port, `SET PROBE ${probeId} ${areaName} ${location}`);
+    } catch (e) {
+      console.error('Failed to send SET PROBE:', e);
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -414,78 +581,104 @@ function App() {
         onStartSim={startSim}
         onStopSim={stopSim}
         simRunning={!!simTimer}
+        currentView={currentView}
+        onViewChange={setCurrentView}
       />
 
       <Container maxWidth="xl" sx={{ py: 2 }}>
-        <Filters
-          areas={Array.from(areas).sort()}
-          activeAreas={activeAreas}
-          setActiveAreas={setActiveAreas}
-          metricVisibility={metricVisibility}
-          setMetricVisibility={setMetricVisibility}
-          probes={probeListForFilter}
-          activeProbes={activeProbes}
-          setActiveProbes={setActiveProbes}
-          aggType={aggType}
-          setAggType={setAggType}
-          showBand={showBand}
-          setShowBand={setShowBand}
-        />
+        {currentView === 'dashboard' ? (
+          <>
+            <Filters
+              areas={Array.from(areas).sort()}
+              activeAreas={activeAreas}
+              setActiveAreas={setActiveAreas}
+              metricVisibility={metricVisibility}
+              setMetricVisibility={setMetricVisibility}
+              probes={probeListForFilter}
+              activeProbes={activeProbes}
+              setActiveProbes={setActiveProbes}
+              aggType={aggType}
+              setAggType={setAggType}
+              showBand={showBand}
+              setShowBand={setShowBand}
+            />
 
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={8}>
-            <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                Individual (Per-Probe)
-              </Typography>
-              <IndividualCharts
-                samples={filteredSamples}
-                probes={probes}
-                locations={locations}
-                activeProbes={activeProbes}
-                metricVisibility={metricVisibility}
-              />
-            </Paper>
-
-            <Paper sx={{ p: 2 }} variant="outlined">
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                Summary (Per-Area)
-              </Typography>
-              <SummaryCharts
-                samples={filteredSamples}
-                probes={probes}
-                locations={locations}
-                activeAreas={activeAreas}
-                metricVisibility={metricVisibility}
-                aggType={aggType}
-                showBand={showBand}
-              />
-            </Paper>
-          </Grid>
-
-          <Grid item xs={12} md={4}>
             <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <LatestReadings samples={filteredSamples} probes={probes} locations={locations} />
+              <Grid item xs={12} md={8}>
+                <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Individual (Per-Probe)
+                  </Typography>
+                  <IndividualCharts
+                    samples={filteredSamples}
+                    probes={probes}
+                    locations={locations}
+                    activeProbes={activeProbes}
+                    metricVisibility={metricVisibility}
+                  />
+                </Paper>
+
+                <Paper sx={{ p: 2 }} variant="outlined">
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Summary (Per-Area)
+                  </Typography>
+                  <SummaryCharts
+                    samples={filteredSamples}
+                    probes={probes}
+                    locations={locations}
+                    activeAreas={activeAreas}
+                    metricVisibility={metricVisibility}
+                    aggType={aggType}
+                    showBand={showBand}
+                  />
+                </Paper>
               </Grid>
-              <Grid item xs={12}>
-                <ProbesPanel probes={probes} locations={locations} setProbes={setProbes} />
-              </Grid>
-              <Grid item xs={12}>
-                <LocationsPanel locations={locations} setLocations={setLocations} />
+
+              <Grid item xs={12} md={4}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <LatestReadings samples={filteredSamples} probes={probes} locations={locations} />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <ProbesPanel probes={probes} locations={locations} setProbes={setProbes} />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <LocationsPanel locations={locations} setLocations={setLocations} />
+                  </Grid>
+                </Grid>
               </Grid>
             </Grid>
-          </Grid>
-        </Grid>
 
-        <Paper sx={{ p: 2, my: 2 }} variant="outlined">
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Serial Log
-          </Typography>
-          <pre style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 240, overflow: 'auto' }}>
-            {serialLog || 'No data yet...'}
-          </pre>
-        </Paper>
+            <Paper sx={{ p: 2, my: 2 }} variant="outlined">
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Serial Log
+              </Typography>
+              <pre style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 240, overflow: 'auto' }}>
+                {serialLog || 'No data yet...'}
+              </pre>
+            </Paper>
+          </>
+        ) : (
+          <Paper sx={{ p: 2 }} variant="outlined">
+            <CommandCenter
+              port={port}
+              connected={!!port}
+              areas={commandCenterAreas}
+              stats={commandCenterStats}
+              pixels={commandCenterPixels}
+              thresholds={commandCenterThresholds}
+              probes={probes}
+              locations={locations}
+              onRefreshAreas={refreshAreas}
+              onRefreshStats={refreshStats}
+              onRefreshPixels={refreshPixels}
+              onRefreshThresholds={refreshThresholds}
+              onSetOverride={handleSetOverride}
+              onSetThreshold={handleSetThreshold}
+              onSetProbe={handleSetProbe}
+            />
+          </Paper>
+        )}
       </Container>
     </ThemeProvider>
   );

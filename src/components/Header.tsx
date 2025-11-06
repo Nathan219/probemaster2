@@ -25,6 +25,8 @@ export default function Header(p: any) {
     onStartSim,
     onStopSim,
     simRunning,
+    currentView,
+    onViewChange,
   } = p;
   return (
     <AppBar position="sticky" color="default" elevation={1}>
@@ -60,6 +62,12 @@ export default function Header(p: any) {
               Disconnect
             </Button>
           )}
+          <Button
+            variant={currentView === 'commandCenter' ? 'contained' : 'outlined'}
+            onClick={() => onViewChange(currentView === 'commandCenter' ? 'dashboard' : 'commandCenter')}
+          >
+            Command Center
+          </Button>
           {!simRunning ? (
             <Button variant="outlined" onClick={onStartSim}>
               Generate Test Data
