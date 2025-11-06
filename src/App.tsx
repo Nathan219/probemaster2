@@ -17,6 +17,7 @@ import {
   parseGetPixels,
   parseGetThreshold,
   parseAcknowledgment,
+  releaseSerialWriter,
 } from './utils/parsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
@@ -289,6 +290,7 @@ function App() {
       readerRef.current?.cancel();
     } catch {}
     try {
+      releaseSerialWriter();
       await port?.close();
     } catch {}
     readerRef.current = null;
