@@ -253,7 +253,9 @@ function App() {
 
     // Fall back to regular sample parsing
     const parsed = parseLine(line);
-    if (!parsed) return;
+    if (!parsed) {
+      return;
+    }
     pending.current.push(parsed);
     if (!probes[parsed.probeId]) {
       const newProbe: Probe = { id: parsed.probeId, locationId: null };
@@ -270,7 +272,20 @@ function App() {
       return;
     }
     try {
+      // Close existing port if open
+      if (port) {
+        await handleDisconnect();
+      }
+
       const p = await (navigator as any).serial.requestPort();
+
+      // Try to close port in case it's already open from a previous session
+      try {
+        await p.close();
+      } catch {
+        // Port might not be open, ignore
+      }
+
       await p.open({ baudRate: baud });
       setPort(p);
       setStatus('Connected. Reading...');
@@ -279,9 +294,29 @@ function App() {
         window.clearInterval(simTimer);
         setSimTimer(null);
       }
-    } catch (e) {
-      console.error(e);
-      setStatus('Failed to connect');
+    } catch (e: any) {
+      // If port is already open, try closing and reopening
+      if (e.name === 'InvalidStateError' && e.message.includes('already open')) {
+        try {
+          const p = await (navigator as any).serial.requestPort();
+          await p.close();
+          await new Promise((r) => setTimeout(r, 100));
+          await p.open({ baudRate: baud });
+          setPort(p);
+          setStatus('Connected. Reading...');
+          startReading(p);
+          if (simTimer) {
+            window.clearInterval(simTimer);
+            setSimTimer(null);
+          }
+        } catch (e2) {
+          console.error(e2);
+          setStatus('Failed to connect');
+        }
+      } else {
+        console.error(e);
+        setStatus('Failed to connect');
+      }
     }
   }
   async function handleDisconnect() {
@@ -291,7 +326,9 @@ function App() {
     } catch {}
     try {
       releaseSerialWriter();
-      await port?.close();
+      if (port) {
+        await port.close();
+      }
     } catch {}
     readerRef.current = null;
     setPort(null);
@@ -671,6 +708,7 @@ function App() {
               thresholds={commandCenterThresholds}
               probes={probes}
               locations={locations}
+              serialLog={serialLog}
               onRefreshAreas={refreshAreas}
               onRefreshStats={refreshStats}
               onRefreshPixels={refreshPixels}
