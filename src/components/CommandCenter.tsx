@@ -30,6 +30,7 @@ interface CommandCenterProps {
   thresholds: Threshold[];
   probes: Record<string, Probe>;
   locations: Record<string, Location>;
+  serialLog: string;
   onRefreshAreas: () => void;
   onRefreshStats: () => void;
   onRefreshPixels: () => void;
@@ -59,6 +60,7 @@ export default function CommandCenter({
   thresholds,
   probes,
   locations,
+  serialLog,
   onRefreshAreas,
   onRefreshStats,
   onRefreshPixels,
@@ -412,6 +414,28 @@ export default function CommandCenter({
               Set Probe
             </Button>
           </Stack>
+        </Box>
+
+        <Divider />
+
+        {/* Serial Log */}
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Serial Log
+          </Typography>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 1,
+              bgcolor: 'background.default',
+              maxHeight: 300,
+              overflow: 'auto',
+            }}
+          >
+            <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: '0.875rem', fontFamily: 'monospace' }}>
+              {serialLog || 'No data yet...'}
+            </pre>
+          </Paper>
         </Box>
       </Stack>
     </Paper>
