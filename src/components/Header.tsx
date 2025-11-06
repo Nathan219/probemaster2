@@ -33,10 +33,7 @@ export default function Header(p: any) {
           <Typography variant="h6" fontWeight={700}>
             ProbeMaster Dashboard
           </Typography>
-          <Typography
-            variant="caption"
-            sx={{ px: 1, py: 0.5, borderRadius: 1, bgcolor: 'action.selected' }}
-          >
+          <Typography variant="caption" sx={{ px: 1, py: 0.5, borderRadius: 1, bgcolor: 'action.selected' }}>
             {status}
           </Typography>
         </Stack>
@@ -92,9 +89,7 @@ export default function Header(p: any) {
             Backup & Clear
           </Button>
           <Tooltip title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
-            <IconButton onClick={() => setDark(!dark)}>
-              {dark ? <Brightness7Icon /> : <Brightness4Icon />}
-            </IconButton>
+            <IconButton onClick={() => setDark(!dark)}>{dark ? <Brightness7Icon /> : <Brightness4Icon />}</IconButton>
           </Tooltip>
         </Stack>
       </Toolbar>

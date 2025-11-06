@@ -61,12 +61,7 @@ export default function Filters(p: any) {
       </Stack>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
         <Typography variant="subtitle2">Aggregation (Summary):</Typography>
-        <ToggleButtonGroup
-          exclusive
-          value={aggType}
-          onChange={(_: any, v: any) => v && setAggType(v)}
-          size="small"
-        >
+        <ToggleButtonGroup exclusive value={aggType} onChange={(_: any, v: any) => v && setAggType(v)} size="small">
           <ToggleButton value="avg">Average</ToggleButton>
           <ToggleButton value="min">Min</ToggleButton>
           <ToggleButton value="max">Max</ToggleButton>

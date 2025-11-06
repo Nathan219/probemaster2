@@ -1,1 +1,51 @@
-function o(){return new Promise((e,t)=>{const r=indexedDB.open('probemaster',2);r.onupgradeneeded=()=>{const e=r.result;e.objectStoreNames.contains('samples')||e.createObjectStore('samples',{keyPath:'_id',autoIncrement:true});e.objectStoreNames.contains('probes')||e.createObjectStore('probes',{keyPath:'id'});e.objectStoreNames.contains('locations')||e.createObjectStore('locations',{keyPath:'id'})};r.onsuccess=()=>e(r.result);r.onerror=()=>t(r.error)})}export async function idbGetAll(e){const t=await o();return new Promise((r,a)=>{const n=t.transaction(e,'readonly');const s=n.objectStore(e).getAll();s.onsuccess=()=>r(s.result);s.onerror=()=>a(s.error)})}export async function idbPut(e,t){const r=await o();return new Promise((a,n)=>{const s=r.transaction(e,'readwrite');s.objectStore(e).put(t);s.oncomplete=()=>a(null);s.onerror=()=>n(s.error)})}export async function idbBulkAddSamples(e){if(!e.length)return;const t=await o();return new Promise((r,a)=>{const n=t.transaction('samples','readwrite');const s=n.objectStore('samples');e.forEach(e=>s.add(e));n.oncomplete=()=>r(null);n.onerror=()=>a(n.error)})}export async function idbClear(e){const t=await o();return new Promise((r,a)=>{const n=t.transaction(e,'readwrite');n.objectStore(e).clear();n.oncomplete=()=>r(null);n.onerror=()=>a(n.error)})}
+function o() {
+  return new Promise((e, t) => {
+    const r = indexedDB.open('probemaster', 2);
+    r.onupgradeneeded = () => {
+      const e = r.result;
+      e.objectStoreNames.contains('samples') || e.createObjectStore('samples', { keyPath: '_id', autoIncrement: true });
+      e.objectStoreNames.contains('probes') || e.createObjectStore('probes', { keyPath: 'id' });
+      e.objectStoreNames.contains('locations') || e.createObjectStore('locations', { keyPath: 'id' });
+    };
+    r.onsuccess = () => e(r.result);
+    r.onerror = () => t(r.error);
+  });
+}
+export async function idbGetAll(e) {
+  const t = await o();
+  return new Promise((r, a) => {
+    const n = t.transaction(e, 'readonly');
+    const s = n.objectStore(e).getAll();
+    s.onsuccess = () => r(s.result);
+    s.onerror = () => a(s.error);
+  });
+}
+export async function idbPut(e, t) {
+  const r = await o();
+  return new Promise((a, n) => {
+    const s = r.transaction(e, 'readwrite');
+    s.objectStore(e).put(t);
+    s.oncomplete = () => a(null);
+    s.onerror = () => n(s.error);
+  });
+}
+export async function idbBulkAddSamples(e) {
+  if (!e.length) return;
+  const t = await o();
+  return new Promise((r, a) => {
+    const n = t.transaction('samples', 'readwrite');
+    const s = n.objectStore('samples');
+    e.forEach((e) => s.add(e));
+    n.oncomplete = () => r(null);
+    n.onerror = () => a(n.error);
+  });
+}
+export async function idbClear(e) {
+  const t = await o();
+  return new Promise((r, a) => {
+    const n = t.transaction(e, 'readwrite');
+    n.objectStore(e).clear();
+    n.oncomplete = () => r(null);
+    n.onerror = () => a(n.error);
+  });
+}
