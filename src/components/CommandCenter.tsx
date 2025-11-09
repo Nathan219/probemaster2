@@ -109,7 +109,10 @@ export default function CommandCenter({ port, baud, connected }: CommandCenterPr
           });
         }
         const areaData = next.get(areaInfo.area)!;
-        areaData.locations.set(areaInfo.location, areaInfo.probeId);
+        // Only add location if there's a probe
+        if (areaInfo.probeId && areaInfo.location) {
+          areaData.locations.set(areaInfo.location, areaInfo.probeId);
+        }
         return next;
       });
       // Auto-fetch thresholds and stats for this area
@@ -218,10 +221,22 @@ export default function CommandCenter({ port, baud, connected }: CommandCenterPr
                   Quick Actions
                 </Typography>
                 <Stack spacing={1}>
-                  <Button variant="outlined" size="small" onClick={() => sendCommand('GET AREAS')} disabled={!connected} fullWidth>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => sendCommand('GET AREAS')}
+                    disabled={!connected}
+                    fullWidth
+                  >
                     GET AREAS
                   </Button>
-                  <Button variant="outlined" size="small" onClick={() => sendCommand('GET STATS')} disabled={!connected} fullWidth>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => sendCommand('GET STATS')}
+                    disabled={!connected}
+                    fullWidth
+                  >
                     GET STATS
                   </Button>
                 </Stack>
@@ -284,11 +299,17 @@ export default function CommandCenter({ port, baud, connected }: CommandCenterPr
                       <Typography variant="subtitle2" sx={{ mb: 1 }}>
                         Locations & Probes
                       </Typography>
-                      {Array.from(areaData.locations.entries()).map(([location, probeId]) => (
-                        <Typography key={location} variant="body2" sx={{ mb: 0.5 }}>
-                          {location} → Probe {probeId}
+                      {areaData.locations.size === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          No probes assigned
                         </Typography>
-                      ))}
+                      ) : (
+                        Array.from(areaData.locations.entries()).map(([location, probeId]) => (
+                          <Typography key={location} variant="body2" sx={{ mb: 0.5 }}>
+                            {location} → Probe {probeId}
+                          </Typography>
+                        ))
+                      )}
                     </Box>
 
                     {metrics.map((metric) => {
@@ -402,13 +423,7 @@ function ThresholdForm({
           </Grid>
         ))}
       </Grid>
-      <Button
-        variant="contained"
-        size="small"
-        onClick={handleSave}
-        disabled={!hasChanges || disabled}
-        fullWidth
-      >
+      <Button variant="contained" size="small" onClick={handleSave} disabled={!hasChanges || disabled} fullWidth>
         Save Thresholds
       </Button>
     </Stack>
@@ -433,4 +448,3 @@ function StatDisplay({ stat }: { stat: StatInfo }) {
     </Stack>
   );
 }
-
