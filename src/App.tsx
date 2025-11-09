@@ -176,21 +176,50 @@ function App() {
     return probs;
   }, [commandCenterAreas, dashboardLocations]);
 
+  // Merge dashboard probes with sensor data probes
+  const allProbes = useMemo(() => {
+    const merged = { ...dashboardProbes };
+    // Add probes from sensor data that aren't in dashboardProbes
+    Object.values(probes).forEach((p) => {
+      if (!merged[p.id]) {
+        // Try to find area from dashboardLocations if probe has locationId
+        const locationId = p.locationId;
+        const location = locationId ? dashboardLocations[locationId] : null;
+        merged[p.id] = {
+          id: p.id,
+          locationId: locationId || null,
+        };
+      }
+    });
+    return merged;
+  }, [dashboardProbes, probes, dashboardLocations]);
+
   const visibleProbeIds = useMemo(() => {
     const allowed = new Set<string>();
-    for (const p of Object.values(dashboardProbes)) {
+    for (const p of Object.values(allProbes)) {
       const area = p.locationId ? dashboardLocations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
       if (activeAreas.has('All') || activeAreas.has(area)) {
         allowed.add(p.id);
       }
     }
-    return new Set([...allowed].filter((id) => activeProbes.has(id)));
-  }, [activeAreas, dashboardProbes, dashboardLocations, activeProbes]);
+    // If no probes match area filter but we have samples, include all probes with samples
+    if (allowed.size === 0 && samples.length > 0) {
+      const probeIdsFromSamples = new Set(samples.map((s) => s.probeId));
+      probeIdsFromSamples.forEach((id) => allowed.add(id));
+    }
+    return new Set([...allowed].filter((id) => activeProbes.has(id) || activeProbes.size === 0));
+  }, [activeAreas, allProbes, dashboardLocations, activeProbes, samples]);
 
   const filteredSamples = useMemo(
     () => samples.filter((s) => visibleProbeIds.has(s.probeId)),
     [samples, visibleProbeIds]
   );
+
+  useEffect(() => {
+    if (activeProbes.size === 0 && Object.keys(allProbes).length) {
+      setActiveProbes(new Set(Object.keys(allProbes)));
+    }
+  }, [allProbes, activeProbes]);
 
   const commandResponseCallbackRef = useRef<((line: string) => void) | null>(null);
   const commandLogCallbackRef = useRef<((line: string) => void) | null>(null);
@@ -635,11 +664,11 @@ function App() {
   }
 
   const probeListForFilter = useMemo(() => {
-    return Object.values(dashboardProbes).map((p) => {
+    return Object.values(allProbes).map((p) => {
       const area = p.locationId ? dashboardLocations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
       return { id: p.id, label: p.id, area };
     });
-  }, [dashboardProbes, dashboardLocations]);
+  }, [allProbes, dashboardLocations]);
 
   function handleImport(file: File) {
     if (file.name.endsWith('.zip')) return importZip(file);
@@ -730,7 +759,7 @@ function App() {
                   </Typography>
                   <IndividualCharts
                     samples={filteredSamples}
-                    probes={dashboardProbes}
+                    probes={allProbes}
                     locations={dashboardLocations}
                     activeProbes={activeProbes}
                     metricVisibility={metricVisibility}
@@ -743,7 +772,7 @@ function App() {
                   </Typography>
                   <SummaryCharts
                     samples={filteredSamples}
-                    probes={dashboardProbes}
+                    probes={allProbes}
                     locations={dashboardLocations}
                     activeAreas={activeAreas}
                     metricVisibility={metricVisibility}
@@ -756,10 +785,10 @@ function App() {
               <Grid item xs={12} md={4}>
                 <Grid container spacing={2}>
                   <Grid item xs={12}>
-                    <LatestReadings samples={filteredSamples} probes={dashboardProbes} locations={dashboardLocations} />
+                    <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
                   </Grid>
                   <Grid item xs={12}>
-                    <ProbesPanel probes={dashboardProbes} locations={dashboardLocations} setProbes={setProbes} />
+                    <ProbesPanel probes={allProbes} locations={dashboardLocations} setProbes={setProbes} />
                   </Grid>
                   <Grid item xs={12}>
                     <LocationsPanel locations={dashboardLocations} setLocations={setLocations} />
