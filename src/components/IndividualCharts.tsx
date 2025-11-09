@@ -25,9 +25,9 @@ export default function IndividualCharts({ samples, probes, locations, activePro
   // --- Group samples by probe ---
   const seriesByProbe = useMemo(() => {
     const groups: Record<string, Sample[]> = {};
-    for (const s of samples) {
-      if (!activeProbes.has(s.probeId)) continue;
-      (groups[s.probeId] ||= []).push(s);
+    for (const sample of samples) {
+      if (!activeProbes.has(sample.probeId)) continue;
+      (groups[sample.probeId] ||= []).push(sample);
     }
     return groups;
   }, [samples, activeProbes]);
@@ -35,16 +35,18 @@ export default function IndividualCharts({ samples, probes, locations, activePro
   // --- Create labels for legend ---
   const probeLabels = useMemo(() => {
     const labels: Record<string, string> = {};
-    for (const id of Object.keys(seriesByProbe)) {
-      const probe = probes[id];
-      const loc = probe?.locationId ? locations[probe.locationId] : null;
-      labels[id] = loc ? `${id} (${loc.area} / ${loc.name})` : id;
+    for (const probeId of Object.keys(seriesByProbe)) {
+      const probe = probes[probeId];
+      const location = probe?.locationId ? locations[probe.locationId] : null;
+      labels[probeId] = location ? `${probeId} (${location.area} / ${location.name})` : probeId;
     }
     return labels;
   }, [seriesByProbe, probes, locations]);
 
   // --- Which metrics to show ---
-  const metrics = Object.entries(metricInfo).filter(([key]) => metricVisibility[key as keyof typeof metricInfo]);
+  const metrics = Object.entries(metricInfo).filter(
+    ([metricKey]) => metricVisibility[metricKey as keyof typeof metricInfo]
+  );
 
   // --- Render ---
   return (
@@ -62,8 +64,8 @@ export default function IndividualCharts({ samples, probes, locations, activePro
                 dataKey="time"
                 type="number"
                 domain={['auto', 'auto']}
-                tickFormatter={(v) =>
-                  new Date(v as number).toLocaleTimeString([], {
+                tickFormatter={(timestamp) =>
+                  new Date(timestamp as number).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
@@ -74,19 +76,19 @@ export default function IndividualCharts({ samples, probes, locations, activePro
                 isAnimationActive={false}
                 content={({ active, payload, label }) => {
                   if (!active || !payload) return null;
-                  const lines = payload.map((p) => ({
-                    name: p.name,
-                    value: p.value,
-                    color: p.stroke,
+                  const tooltipLines = payload.map((payloadItem) => ({
+                    name: payloadItem.name,
+                    value: payloadItem.value,
+                    color: payloadItem.stroke,
                   }));
                   return (
                     <div style={{ background: '#222', color: '#fff', padding: 8, borderRadius: 4 }}>
                       <div>
                         <strong>{new Date(label).toLocaleTimeString()}</strong>
                       </div>
-                      {lines.map((l, i) => (
-                        <div key={i} style={{ color: l.color }}>
-                          {l.name}: {l.value}
+                      {tooltipLines.map((line, index) => (
+                        <div key={index} style={{ color: line.color }}>
+                          {line.name}: {line.value}
                         </div>
                       ))}
                     </div>
@@ -95,18 +97,18 @@ export default function IndividualCharts({ samples, probes, locations, activePro
               />
               <Legend />
 
-              {Object.entries(seriesByProbe).map(([probeId, rows], idx) => (
+              {Object.entries(seriesByProbe).map(([probeId, rows], index) => (
                 <Line
                   key={probeId}
                   name={probeLabels[probeId]}
                   type="monotone"
-                  data={rows.map((r) => ({
-                    time: r.ts,
-                    value: (r as any)[metric.key],
+                  data={rows.map((row) => ({
+                    time: row.ts,
+                    value: (row as any)[metric.key],
                   }))}
                   dataKey="value"
                   stroke={metric.color}
-                  strokeOpacity={0.9 - (idx % 4) * 0.15}
+                  strokeOpacity={0.9 - (index % 4) * 0.15}
                   dot={false}
                 />
               ))}
