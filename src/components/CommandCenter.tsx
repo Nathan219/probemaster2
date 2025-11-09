@@ -25,6 +25,15 @@ type AreaData = {
   stats: Map<string, StatInfo>; // metric -> stat info
 };
 
+// Map firmware metric names to display names
+function normalizeMetricName(metric: string): string {
+  const upper = metric.toUpperCase();
+  if (upper === 'TEMP') return 'Temp';
+  if (upper === 'HUM') return 'Hum';
+  if (upper === 'DB') return 'Sound';
+  return metric; // CO2 stays as CO2
+}
+
 interface CommandCenterProps {
   port: SerialPort | null;
   baud: number;
@@ -111,6 +120,8 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
         });
       } else if (parsed.type === 'stat' && parsed.data) {
         const statInfo = parsed.data as StatInfo;
+        // Normalize metric name from firmware format to display format
+        const normalizedMetric = normalizeMetricName(statInfo.metric);
         setAreas((prev) => {
           const next = new Map(prev);
           if (!next.has(statInfo.area)) {
@@ -122,7 +133,8 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
             });
           }
           const areaData = next.get(statInfo.area)!;
-          areaData.stats.set(statInfo.metric, statInfo);
+          // Store with normalized metric name
+          areaData.stats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric });
           return next;
         });
       }
@@ -137,15 +149,6 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
       onCommandResponseRef.current = null;
     };
   }, [onLine, onCommandResponseRef]);
-
-  useEffect(() => {
-    if (connected && port) {
-      // Auto-discover areas on connection
-      setTimeout(() => {
-        sendCommand('GET AREAS');
-      }, 1000);
-    }
-  }, [connected, port]);
 
   async function handleSendCommand() {
     if (!commandInput.trim()) return;
@@ -211,6 +214,23 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                   >
                     GET STATS
                   </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => {
+                      // Fetch thresholds for all areas and metrics
+                      const metrics = ['CO2', 'Temp', 'Hum', 'Sound'];
+                      Array.from(areas.values()).forEach((areaData) => {
+                        metrics.forEach((metric) => {
+                          sendCommand(`GET THRESHOLDS ${areaData.area} ${metric}`);
+                        });
+                      });
+                    }}
+                    disabled={!connected || areas.size === 0}
+                    fullWidth
+                  >
+                    GET THRESHOLDS
+                  </Button>
                 </Stack>
               </Box>
             </Stack>
@@ -261,9 +281,31 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
             {Array.from(areas.values()).map((areaData) => (
               <Accordion key={areaData.area} sx={{ mb: 1 }}>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="subtitle1">
-                    {areaData.area} ({areaData.locations.size} location{areaData.locations.size !== 1 ? 's' : ''})
-                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      width: '100%',
+                      mr: 2,
+                    }}
+                  >
+                    <Typography variant="subtitle1">
+                      {areaData.area} ({areaData.locations.size} location{areaData.locations.size !== 1 ? 's' : ''})
+                    </Typography>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendCommand(`GET STATS ${areaData.area}`);
+                      }}
+                      disabled={!connected}
+                      sx={{ minWidth: 'auto' }}
+                    >
+                      Get Stats
+                    </Button>
+                  </Box>
                 </AccordionSummary>
                 <AccordionDetails>
                   <Stack spacing={3}>
@@ -295,9 +337,22 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                           <Grid container spacing={2}>
                             <Grid item xs={12} md={6}>
                               <Paper variant="outlined" sx={{ p: 2 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                                  Thresholds
-                                </Typography>
+                                <Box
+                                  sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
+                                >
+                                  <Typography variant="caption" color="text.secondary">
+                                    Thresholds
+                                  </Typography>
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => sendCommand(`GET THRESHOLDS ${areaData.area} ${metric}`)}
+                                    disabled={!connected}
+                                    sx={{ minWidth: 'auto', px: 1, py: 0.5 }}
+                                  >
+                                    Fetch
+                                  </Button>
+                                </Box>
                                 {threshold ? (
                                   <ThresholdForm
                                     area={areaData.area}
@@ -308,21 +363,34 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                                   />
                                 ) : (
                                   <Typography variant="body2" color="text.secondary">
-                                    Loading...
+                                    Not loaded. Click Fetch to load thresholds.
                                   </Typography>
                                 )}
                               </Paper>
                             </Grid>
                             <Grid item xs={12} md={6}>
                               <Paper variant="outlined" sx={{ p: 2 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                                  Statistics
-                                </Typography>
+                                <Box
+                                  sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
+                                >
+                                  <Typography variant="caption" color="text.secondary">
+                                    Statistics
+                                  </Typography>
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => sendCommand(`GET STATS ${areaData.area}`)}
+                                    disabled={!connected}
+                                    sx={{ minWidth: 'auto', px: 1, py: 0.5 }}
+                                  >
+                                    Fetch
+                                  </Button>
+                                </Box>
                                 {stat ? (
                                   <StatDisplay stat={stat} />
                                 ) : (
                                   <Typography variant="body2" color="text.secondary">
-                                    Loading...
+                                    Not loaded. Click Fetch to load stats.
                                   </Typography>
                                 )}
                               </Paper>
