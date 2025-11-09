@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Paper,
   Typography,
@@ -30,9 +30,10 @@ interface CommandCenterProps {
   baud: number;
   connected: boolean;
   serialLog: string;
+  onCommandResponseRef: React.MutableRefObject<((line: string) => void) | null>;
 }
 
-export default function CommandCenter({ port, baud, connected, serialLog }: CommandCenterProps) {
+export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef }: CommandCenterProps) {
   const [commandInput, setCommandInput] = useState('');
   const [commandLog, setCommandLog] = useState<string[]>([]);
   const [areas, setAreas] = useState<Map<string, AreaData>>(new Map());
@@ -40,123 +41,13 @@ export default function CommandCenter({ port, baud, connected, serialLog }: Comm
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
   const pendingCommandRef = useRef<string | null>(null);
 
+  // Register callback to receive command responses from App.tsx
   useEffect(() => {
-    if (connected && port) {
-      startReading(port);
-      // Auto-discover areas on connection
-      setTimeout(() => {
-        sendCommand('GET AREAS');
-      }, 500);
-    } else {
-      if (readerRef.current) {
-        readerRef.current.cancel();
-        readerRef.current = null;
-      }
-    }
+    onCommandResponseRef.current = onLine;
     return () => {
-      if (readerRef.current) {
-        readerRef.current.cancel();
-        readerRef.current = null;
-      }
+      onCommandResponseRef.current = null;
     };
-  }, [connected, port]);
-
-  async function startReading(p: SerialPort) {
-    if (!p.readable) return;
-    const textDecoder = new TextDecoderStream();
-    const readableClosed = p.readable.pipeTo(textDecoder.writable as WritableStream<Uint8Array>);
-    const reader = (textDecoder.readable as ReadableStream<string>).getReader();
-    readerRef.current = reader;
-
-    let buffer = '';
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) {
-          buffer += value;
-          let idx;
-          while ((idx = buffer.search(/\r?\n/)) >= 0) {
-            const line = buffer.slice(0, idx);
-            buffer = buffer.slice(idx + 1);
-            await onLine(line.trim());
-          }
-        }
-        await new Promise((r) => setTimeout(r, 0));
-      }
-    } catch (e) {
-      console.error('Command center read error', e);
-    } finally {
-      try {
-        await readableClosed;
-      } catch {}
-    }
-  }
-
-  async function onLine(line: string) {
-    if (!line) return;
-    setCommandLog((prev) => [...prev, `[RX] ${line}`].slice(-1000));
-
-    const parsed = parseCommandResponse(line);
-    if (parsed.type === 'area' && parsed.data) {
-      const areaInfo = parsed.data as AreaInfo;
-      setAreas((prev) => {
-        const next = new Map(prev);
-        if (!next.has(areaInfo.area)) {
-          next.set(areaInfo.area, {
-            area: areaInfo.area,
-            locations: new Map(),
-            thresholds: new Map(),
-            stats: new Map(),
-          });
-        }
-        const areaData = next.get(areaInfo.area)!;
-        // Only add location if there's a probe
-        if (areaInfo.probeId && areaInfo.location) {
-          areaData.locations.set(areaInfo.location, areaInfo.probeId);
-        }
-        return next;
-      });
-      // Auto-fetch thresholds and stats for this area
-      const metrics = ['CO2', 'Temp', 'Hum', 'Sound'];
-      for (const metric of metrics) {
-        setTimeout(() => sendCommand(`GET THRESHOLDS ${areaInfo.area} ${metric}`), 100 * (metrics.indexOf(metric) + 1));
-      }
-      setTimeout(() => sendCommand(`GET STATS ${areaInfo.area}`), 500);
-    } else if (parsed.type === 'threshold' && parsed.data) {
-      const thresholdInfo = parsed.data as ThresholdInfo;
-      setAreas((prev) => {
-        const next = new Map(prev);
-        if (!next.has(thresholdInfo.area)) {
-          next.set(thresholdInfo.area, {
-            area: thresholdInfo.area,
-            locations: new Map(),
-            thresholds: new Map(),
-            stats: new Map(),
-          });
-        }
-        const areaData = next.get(thresholdInfo.area)!;
-        areaData.thresholds.set(thresholdInfo.metric, thresholdInfo);
-        return next;
-      });
-    } else if (parsed.type === 'stat' && parsed.data) {
-      const statInfo = parsed.data as StatInfo;
-      setAreas((prev) => {
-        const next = new Map(prev);
-        if (!next.has(statInfo.area)) {
-          next.set(statInfo.area, {
-            area: statInfo.area,
-            locations: new Map(),
-            thresholds: new Map(),
-            stats: new Map(),
-          });
-        }
-        const areaData = next.get(statInfo.area)!;
-        areaData.stats.set(statInfo.metric, statInfo);
-        return next;
-      });
-    }
-  }
+  }, [onCommandResponseRef]);
 
   async function sendCommand(cmd: string) {
     if (!port || !port.writable) {
@@ -176,6 +67,85 @@ export default function CommandCenter({ port, baud, connected, serialLog }: Comm
       setCommandLog((prev) => [...prev, `[ERROR] Failed to send: ${e}`]);
     }
   }
+
+  const onLine = useCallback(
+    async (line: string) => {
+      if (!line) return;
+      setCommandLog((prev) => [...prev, `[RX] ${line}`].slice(-1000));
+
+      const parsed = parseCommandResponse(line);
+      if (parsed.type === 'area' && parsed.data) {
+        const areaInfo = parsed.data as AreaInfo;
+        setAreas((prev) => {
+          const next = new Map(prev);
+          if (!next.has(areaInfo.area)) {
+            next.set(areaInfo.area, {
+              area: areaInfo.area,
+              locations: new Map(),
+              thresholds: new Map(),
+              stats: new Map(),
+            });
+          }
+          const areaData = next.get(areaInfo.area)!;
+          // Only add location if there's a probe
+          if (areaInfo.probeId && areaInfo.location) {
+            areaData.locations.set(areaInfo.location, areaInfo.probeId);
+          }
+          return next;
+        });
+      } else if (parsed.type === 'threshold' && parsed.data) {
+        const thresholdInfo = parsed.data as ThresholdInfo;
+        setAreas((prev) => {
+          const next = new Map(prev);
+          if (!next.has(thresholdInfo.area)) {
+            next.set(thresholdInfo.area, {
+              area: thresholdInfo.area,
+              locations: new Map(),
+              thresholds: new Map(),
+              stats: new Map(),
+            });
+          }
+          const areaData = next.get(thresholdInfo.area)!;
+          areaData.thresholds.set(thresholdInfo.metric, thresholdInfo);
+          return next;
+        });
+      } else if (parsed.type === 'stat' && parsed.data) {
+        const statInfo = parsed.data as StatInfo;
+        setAreas((prev) => {
+          const next = new Map(prev);
+          if (!next.has(statInfo.area)) {
+            next.set(statInfo.area, {
+              area: statInfo.area,
+              locations: new Map(),
+              thresholds: new Map(),
+              stats: new Map(),
+            });
+          }
+          const areaData = next.get(statInfo.area)!;
+          areaData.stats.set(statInfo.metric, statInfo);
+          return next;
+        });
+      }
+    },
+    [port]
+  );
+
+  // Register callback to receive command responses from App.tsx
+  useEffect(() => {
+    onCommandResponseRef.current = onLine;
+    return () => {
+      onCommandResponseRef.current = null;
+    };
+  }, [onLine, onCommandResponseRef]);
+
+  useEffect(() => {
+    if (connected && port) {
+      // Auto-discover areas on connection
+      setTimeout(() => {
+        sendCommand('GET AREAS');
+      }, 1000);
+    }
+  }, [connected, port]);
 
   async function handleSendCommand() {
     if (!commandInput.trim()) return;
@@ -444,10 +414,10 @@ function StatDisplay({ stat }: { stat: StatInfo }) {
         <strong>Max:</strong> {stat.max === -1 ? 'N/A' : stat.max.toFixed(2)}
       </Typography>
       <Typography variant="body2">
-        <strong>Min Outlier:</strong> {stat.min_o === -1 ? 'N/A' : stat.min_o.toFixed(2)}
+        <strong>Min Override:</strong> {stat.min_o === -1 ? 'N/A' : stat.min_o.toFixed(2)}
       </Typography>
       <Typography variant="body2">
-        <strong>Max Outlier:</strong> {stat.max_o === -1 ? 'N/A' : stat.max_o.toFixed(2)}
+        <strong>Max Override:</strong> {stat.max_o === -1 ? 'N/A' : stat.max_o.toFixed(2)}
       </Typography>
     </Stack>
   );
