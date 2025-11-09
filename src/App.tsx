@@ -129,12 +129,6 @@ function App() {
 
   // Areas are now only populated from GET AREAS command responses, not from locations
 
-  useEffect(() => {
-    if (activeProbes.size === 0 && Object.keys(probes).length) {
-      setActiveProbes(new Set(Object.keys(probes)));
-    }
-  }, [probes]);
-
   // Auto-persist probes and locations to IndexedDB
   useEffect(() => {
     for (const probe of Object.values(probes)) {
@@ -148,16 +142,50 @@ function App() {
     }
   }, [locations]);
 
+  // Derive locations and probes from GET AREAS data for Dashboard
+  const dashboardLocations = useMemo(() => {
+    const locs: Record<string, Location> = {};
+    commandCenterAreas.forEach((areaData, area) => {
+      areaData.locations.forEach((probeId, locationName) => {
+        // Use location name as the location ID
+        const locationId = `${area}-${locationName}`;
+        locs[locationId] = {
+          id: locationId,
+          name: locationName,
+          area: area,
+        };
+      });
+    });
+    return locs;
+  }, [commandCenterAreas]);
+
+  const dashboardProbes = useMemo(() => {
+    const probs: Record<string, Probe> = {};
+    commandCenterAreas.forEach((areaData) => {
+      areaData.locations.forEach((probeId, locationName) => {
+        // Find the location ID for this probe
+        const locationId = Object.keys(dashboardLocations).find(
+          (lid) => dashboardLocations[lid].name === locationName && dashboardLocations[lid].area === areaData.area
+        );
+        probs[probeId] = {
+          id: probeId,
+          locationId: locationId || null,
+        };
+      });
+    });
+    return probs;
+  }, [commandCenterAreas, dashboardLocations]);
+
   const visibleProbeIds = useMemo(() => {
     const allowed = new Set<string>();
-    for (const p of Object.values(probes)) {
-      const area = p.locationId ? locations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
+    for (const p of Object.values(dashboardProbes)) {
+      const area = p.locationId ? dashboardLocations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
       if (activeAreas.has('All') || activeAreas.has(area)) {
         allowed.add(p.id);
       }
     }
     return new Set([...allowed].filter((id) => activeProbes.has(id)));
-  }, [activeAreas, probes, locations, activeProbes]);
+  }, [activeAreas, dashboardProbes, dashboardLocations, activeProbes]);
 
   const filteredSamples = useMemo(
     () => samples.filter((s) => visibleProbeIds.has(s.probeId)),
@@ -365,6 +393,8 @@ function App() {
     } catch (e) {
       console.error(e);
       setStatus('Failed to connect');
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      alert(`Failed to connect to serial port: ${errorMessage}`);
     }
   }
   async function handleDisconnect() {
@@ -605,11 +635,11 @@ function App() {
   }
 
   const probeListForFilter = useMemo(() => {
-    return Object.values(probes).map((p) => {
-      const area = p.locationId ? locations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
+    return Object.values(dashboardProbes).map((p) => {
+      const area = p.locationId ? dashboardLocations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
       return { id: p.id, label: p.id, area };
     });
-  }, [probes, locations]);
+  }, [dashboardProbes, dashboardLocations]);
 
   function handleImport(file: File) {
     if (file.name.endsWith('.zip')) return importZip(file);
@@ -700,8 +730,8 @@ function App() {
                   </Typography>
                   <IndividualCharts
                     samples={filteredSamples}
-                    probes={probes}
-                    locations={locations}
+                    probes={dashboardProbes}
+                    locations={dashboardLocations}
                     activeProbes={activeProbes}
                     metricVisibility={metricVisibility}
                   />
@@ -713,8 +743,8 @@ function App() {
                   </Typography>
                   <SummaryCharts
                     samples={filteredSamples}
-                    probes={probes}
-                    locations={locations}
+                    probes={dashboardProbes}
+                    locations={dashboardLocations}
                     activeAreas={activeAreas}
                     metricVisibility={metricVisibility}
                     aggType={aggType}
@@ -726,13 +756,13 @@ function App() {
               <Grid item xs={12} md={4}>
                 <Grid container spacing={2}>
                   <Grid item xs={12}>
-                    <LatestReadings samples={filteredSamples} probes={probes} locations={locations} />
+                    <LatestReadings samples={filteredSamples} probes={dashboardProbes} locations={dashboardLocations} />
                   </Grid>
                   <Grid item xs={12}>
-                    <ProbesPanel probes={probes} locations={locations} setProbes={setProbes} />
+                    <ProbesPanel probes={dashboardProbes} locations={dashboardLocations} setProbes={setProbes} />
                   </Grid>
                   <Grid item xs={12}>
-                    <LocationsPanel locations={locations} setLocations={setLocations} />
+                    <LocationsPanel locations={dashboardLocations} setLocations={setLocations} />
                   </Grid>
                 </Grid>
               </Grid>
