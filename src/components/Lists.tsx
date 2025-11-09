@@ -22,9 +22,9 @@ export function LocationsPanel({
   const add = async () => {
     if (!name || !area) return;
     const id = Math.random().toString(36).slice(2, 10);
-    const l: Location = { id, name, area };
-    setLocations((p: any) => ({ ...p, [l.id]: l }));
-    await idbPut('locations', l);
+    const location: Location = { id, name, area };
+    setLocations((prev: any) => ({ ...prev, [location.id]: location }));
+    await idbPut('locations', location);
     setName('');
     setArea('');
   };
@@ -43,10 +43,10 @@ export function LocationsPanel({
       </Stack>
       <Divider sx={{ my: 1 }} />
       <Stack spacing={1} maxHeight={280} sx={{ overflow: 'auto' }}>
-        {Object.values(locations).map((l: any) => (
-          <Paper key={l.id} variant="outlined" sx={{ p: 1 }}>
-            <Typography fontWeight={600}>{l.name}</Typography>
-            <Typography variant="caption">Area: {l.area}</Typography>
+        {Object.values(locations).map((location: any) => (
+          <Paper key={location.id} variant="outlined" sx={{ p: 1 }}>
+            <Typography fontWeight={600}>{location.name}</Typography>
+            <Typography variant="caption">Area: {location.area}</Typography>
           </Paper>
         ))}
       </Stack>
@@ -64,10 +64,10 @@ export function ProbesPanel({
   setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
 }) {
   const assign = async (id: string, locationId: string | null) => {
-    setProbes((p: any) => {
-      const n = { ...p, [id]: { ...p[id], locationId } };
-      idbPut('probes', n[id]);
-      return n;
+    setProbes((prev: any) => {
+      const updatedProbes = { ...prev, [id]: { ...prev[id], locationId } };
+      idbPut('probes', updatedProbes[id]);
+      return updatedProbes;
     });
   };
 
@@ -77,21 +77,21 @@ export function ProbesPanel({
         Probes
       </Typography>
       <Stack spacing={1} maxHeight={350} sx={{ overflow: 'auto' }}>
-        {Object.values(probes).map((p: any) => (
-          <Stack key={p.id} direction="row" spacing={1} alignItems="center">
-            <Typography sx={{ fontFamily: 'monospace' }}>{p.id}</Typography>
+        {Object.values(probes).map((probe: any) => (
+          <Stack key={probe.id} direction="row" spacing={1} alignItems="center">
+            <Typography sx={{ fontFamily: 'monospace' }}>{probe.id}</Typography>
             <TextField
               select
               size="small"
               label="Location"
-              value={p.locationId || ''}
-              onChange={(e) => assign(p.id, (e.target as any).value || null)}
+              value={probe.locationId || ''}
+              onChange={(e) => assign(probe.id, (e.target as any).value || null)}
               sx={{ minWidth: 220 }}
             >
               <MenuItem value="">Unassigned</MenuItem>
-              {Object.values(locations).map((l: any) => (
-                <MenuItem key={l.id} value={l.id}>
-                  {l.name} ({l.area})
+              {Object.values(locations).map((location: any) => (
+                <MenuItem key={location.id} value={location.id}>
+                  {location.name} ({location.area})
                 </MenuItem>
               ))}
             </TextField>
@@ -112,7 +112,7 @@ export function LatestReadings({
   locations: Record<string, Location>;
 }) {
   const latest: Record<string, Sample> = {};
-  for (const s of samples) latest[s.probeId] = s;
+  for (const sample of samples) latest[sample.probeId] = sample;
 
   return (
     <Paper sx={{ p: 2 }} variant="outlined">
@@ -125,32 +125,32 @@ export function LatestReadings({
             No probes yet.
           </Typography>
         )}
-        {Object.values(probes).map((p: any) => {
-          const l = p.locationId ? locations[p.locationId] : null;
-          const label = l ? `${l.area} / ${l.name}` : 'Unassigned';
-          const r = latest[p.id];
+        {Object.values(probes).map((probe: any) => {
+          const location = probe.locationId ? locations[probe.locationId] : null;
+          const label = location ? `${location.area} / ${location.name}` : 'Unassigned';
+          const latestReading = latest[probe.id];
           return (
-            <Paper key={p.id} variant="outlined" sx={{ p: 1.5 }}>
-              <Typography sx={{ fontFamily: 'monospace' }}>{p.id}</Typography>
+            <Paper key={probe.id} variant="outlined" sx={{ p: 1.5 }}>
+              <Typography sx={{ fontFamily: 'monospace' }}>{probe.id}</Typography>
               <Typography variant="caption" color="text.secondary">
                 Location: {label}
               </Typography>
-              {r ? (
+              {latestReading ? (
                 <Stack direction="row" spacing={2} sx={{ mt: 0.5 }}>
                   <Typography variant="body2">
-                    CO₂: <b>{r.co2}</b>
+                    CO₂: <b>{latestReading.co2}</b>
                   </Typography>
                   <Typography variant="body2">
-                    Temp: <b>{r.temp.toFixed(2)}</b>°C
+                    Temp: <b>{latestReading.temp.toFixed(2)}</b>°C
                   </Typography>
                   <Typography variant="body2">
-                    Hum: <b>{r.hum.toFixed(2)}</b>%
+                    Hum: <b>{latestReading.hum.toFixed(2)}</b>%
                   </Typography>
                   <Typography variant="body2">
-                    Sound: <b>{r.sound}</b>
+                    Sound: <b>{latestReading.sound}</b>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {new Date(r.ts).toLocaleTimeString()}
+                    {new Date(latestReading.ts).toLocaleTimeString()}
                   </Typography>
                 </Stack>
               ) : (
