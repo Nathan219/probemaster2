@@ -25,6 +25,7 @@ export default function Header(p: any) {
     onStartSim,
     onStopSim,
     simRunning,
+    onGetAreas,
   } = p;
   return (
     <AppBar position="sticky" color="default" elevation={1}>
@@ -56,9 +57,14 @@ export default function Header(p: any) {
               Connect Serial
             </Button>
           ) : (
-            <Button variant="contained" color="error" onClick={onDisconnect}>
-              Disconnect
-            </Button>
+            <>
+              <Button variant="contained" color="error" onClick={onDisconnect}>
+                Disconnect
+              </Button>
+              <Button variant="outlined" onClick={onGetAreas} disabled={!connected}>
+                GET AREAS
+              </Button>
+            </>
           )}
           {!simRunning ? (
             <Button variant="outlined" onClick={onStartSim}>

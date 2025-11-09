@@ -16,10 +16,10 @@ import {
   Chip,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from '../utils/commandParsing';
+import { ThresholdInfo, StatInfo } from '../utils/commandParsing';
 import SerialLog from './SerialLog';
 
-type AreaData = {
+export type AreaData = {
   area: string;
   locations: Map<string, string>; // location -> probeId
   thresholds: Map<string, ThresholdInfo>; // metric -> threshold info
@@ -41,136 +41,32 @@ interface CommandCenterProps {
   connected: boolean;
   serialLog: string;
   onCommandResponseRef: React.MutableRefObject<((line: string) => void) | null>;
+  onCommandLogRef: React.MutableRefObject<((line: string) => void) | null>;
+  areas: Map<string, AreaData>;
+  setAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
+  sendCommand: (cmd: string) => Promise<void>;
 }
 
-export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef }: CommandCenterProps) {
+export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef, onCommandLogRef, areas, setAreas, sendCommand }: CommandCenterProps) {
   const [commandInput, setCommandInput] = useState('');
   const [commandLog, setCommandLog] = useState<string[]>([]);
-  const [areas, setAreas] = useState<Map<string, AreaData>>(new Map());
   const [loading, setLoading] = useState(false);
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
-  const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
-  const pendingCommandRef = useRef<string | null>(null);
-  const writerRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
-
-  // Register callback to receive command responses from App.tsx
-  useEffect(() => {
-    onCommandResponseRef.current = onLine;
-    return () => {
-      onCommandResponseRef.current = null;
-    };
-  }, [onCommandResponseRef]);
-
-  // Initialize writer when port changes
-  useEffect(() => {
-    if (port && port.writable && !writerRef.current) {
-      writerRef.current = port.writable.getWriter();
-    }
-    return () => {
-      if (writerRef.current) {
-        writerRef.current.releaseLock();
-        writerRef.current = null;
-      }
-    };
-  }, [port]);
-
-  async function sendCommand(cmd: string) {
-    if (!port || !port.writable) {
-      setCommandLog((prev) => [...prev, '[ERROR] Port not writable']);
-      return;
-    }
-    const command = cmd.trim() + '\n';
-    setCommandLog((prev) => [...prev, `[TX] ${cmd}`]);
-    pendingCommandRef.current = cmd;
-    try {
-      // Get or reuse writer
-      if (!writerRef.current) {
-        writerRef.current = port.writable.getWriter();
-      }
-      const encoder = new TextEncoder();
-      await writerRef.current.write(encoder.encode(command));
-    } catch (e) {
-      console.error('Send command error', e);
-      setCommandLog((prev) => [...prev, `[ERROR] Failed to send: ${e}`]);
-      // If writer is invalid, clear it so we get a new one next time
-      if (writerRef.current) {
-        try {
-          writerRef.current.releaseLock();
-        } catch {}
-        writerRef.current = null;
-      }
-    }
-  }
 
   const onLine = useCallback(
     async (line: string) => {
       if (!line) return;
       setCommandLog((prev) => [...prev, `[RX] ${line}`].slice(-1000));
-
-      const parsed = parseCommandResponse(line);
-      if (parsed.type === 'area' && parsed.data) {
-        const areaInfo = parsed.data as AreaInfo;
-        setAreas((prev) => {
-          const next = new Map(prev);
-          if (!next.has(areaInfo.area)) {
-            next.set(areaInfo.area, {
-              area: areaInfo.area,
-              locations: new Map(),
-              thresholds: new Map(),
-              stats: new Map(),
-            });
-          }
-          const areaData = next.get(areaInfo.area)!;
-          // If no probe (empty strings), clear locations for this area
-          if (!areaInfo.probeId || !areaInfo.probeId.trim() || !areaInfo.location || !areaInfo.location.trim()) {
-            areaData.locations.clear();
-          } else {
-            // Only add location if there's a probe (check for non-empty strings)
-            areaData.locations.set(areaInfo.location, areaInfo.probeId);
-          }
-          return next;
-        });
-      } else if (parsed.type === 'threshold' && parsed.data) {
-        const thresholdInfo = parsed.data as ThresholdInfo;
-        // Normalize metric name from firmware format to display format
-        const normalizedMetric = normalizeMetricName(thresholdInfo.metric);
-        setAreas((prev) => {
-          const next = new Map(prev);
-          if (!next.has(thresholdInfo.area)) {
-            next.set(thresholdInfo.area, {
-              area: thresholdInfo.area,
-              locations: new Map(),
-              thresholds: new Map(),
-              stats: new Map(),
-            });
-          }
-          const areaData = next.get(thresholdInfo.area)!;
-          // Store with normalized metric name
-          areaData.thresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric });
-          return next;
-        });
-      } else if (parsed.type === 'stat' && parsed.data) {
-        const statInfo = parsed.data as StatInfo;
-        // Normalize metric name from firmware format to display format
-        const normalizedMetric = normalizeMetricName(statInfo.metric);
-        setAreas((prev) => {
-          const next = new Map(prev);
-          if (!next.has(statInfo.area)) {
-            next.set(statInfo.area, {
-              area: statInfo.area,
-              locations: new Map(),
-              thresholds: new Map(),
-              stats: new Map(),
-            });
-          }
-          const areaData = next.get(statInfo.area)!;
-          // Store with normalized metric name
-          areaData.stats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric });
-          return next;
-        });
-      }
+      // State updates are handled in App.tsx, we just log here
     },
-    [port]
+    []
+  );
+
+  const onCommandLog = useCallback(
+    (line: string) => {
+      setCommandLog((prev) => [...prev, line].slice(-1000));
+    },
+    []
   );
 
   // Register callback to receive command responses from App.tsx
@@ -179,10 +75,19 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
     return () => {
       onCommandResponseRef.current = null;
     };
-  }, [onLine, onCommandResponseRef]);
+  }, [onCommandResponseRef, onLine]);
+
+  // Register callback to receive command log entries from App.tsx
+  useEffect(() => {
+    onCommandLogRef.current = onCommandLog;
+    return () => {
+      onCommandLogRef.current = null;
+    };
+  }, [onCommandLogRef, onCommandLog]);
 
   async function handleSendCommand() {
     if (!commandInput.trim()) return;
+    setCommandLog((prev) => [...prev, `[TX] ${commandInput}`]);
     await sendCommand(commandInput);
     setCommandInput('');
   }
@@ -227,15 +132,6 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                   Quick Actions
                 </Typography>
                 <Stack spacing={1}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => sendCommand('GET AREAS')}
-                    disabled={!connected}
-                    fullWidth
-                  >
-                    GET AREAS
-                  </Button>
                   <Button
                     variant="outlined"
                     size="small"
@@ -369,18 +265,30 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                     <Typography variant="subtitle1">
                       {areaData.area} ({areaData.locations.size} location{areaData.locations.size !== 1 ? 's' : ''})
                     </Typography>
-                    <Button
-                      variant="outlined"
-                      size="small"
+                    <Box
+                      component="span"
                       onClick={(e) => {
                         e.stopPropagation();
                         sendCommand(`GET STATS ${areaData.area}`);
                       }}
-                      disabled={!connected}
-                      sx={{ minWidth: 'auto' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 'auto',
+                        px: 1.5,
+                        py: 0.5,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        fontSize: '0.875rem',
+                        cursor: connected ? 'pointer' : 'not-allowed',
+                        opacity: connected ? 1 : 0.5,
+                        '&:hover': connected ? { bgcolor: 'action.hover' } : {},
+                      }}
                     >
                       Get Stats
-                    </Button>
+                    </Box>
                   </Box>
                 </AccordionSummary>
                 <AccordionDetails>

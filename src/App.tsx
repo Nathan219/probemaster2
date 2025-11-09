@@ -5,11 +5,12 @@ import Filters from './components/Filters';
 import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
 import { ProbesPanel, LocationsPanel, LatestReadings } from './components/Lists';
-import CommandCenter from './components/CommandCenter';
+import CommandCenter, { AreaData } from './components/CommandCenter';
 import SerialLog from './components/SerialLog';
 import { makeTheme } from './theme';
 import { Sample, Probe, Location } from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
+import { parseAreaResponse, parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
 import { createSimSetup, makeSimTickers } from './sim';
@@ -42,6 +43,9 @@ function App() {
   const [locations, setLocations] = useState<Record<string, Location>>({});
   const [areas, setAreas] = useState<Set<string>>(new Set());
 
+  // Command Center areas data (shared between tabs)
+  const [commandCenterAreas, setCommandCenterAreas] = useState<Map<string, AreaData>>(new Map());
+
   // Filters
   const [metricVisibility, setMetricVisibility] = useState({ CO2: true, Temp: true, Hum: true, Sound: true });
   const [activeAreas, setActiveAreas] = useState<Set<string>>(new Set(['All']));
@@ -50,6 +54,8 @@ function App() {
   const [showBand, setShowBand] = useState<boolean>(true);
 
   const pending = useRef<Sample[]>([]);
+  const writerRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
+
   useEffect(() => {
     const t = window.setInterval(() => {
       if (pending.current.length) {
@@ -62,6 +68,48 @@ function App() {
     }, 400);
     return () => clearInterval(t);
   }, []);
+
+  // Initialize writer when port changes
+  useEffect(() => {
+    if (port && port.writable && !writerRef.current) {
+      writerRef.current = port.writable.getWriter();
+    }
+    return () => {
+      if (writerRef.current) {
+        writerRef.current.releaseLock();
+        writerRef.current = null;
+      }
+    };
+  }, [port]);
+
+  // Function to send commands via serial port
+  async function sendCommand(cmd: string) {
+    if (!port || !port.writable) {
+      console.error('Port not writable');
+      return;
+    }
+    const command = cmd.trim() + '\n';
+    setSerialLog((prev) => (prev + `[ROUTE USB->UART1] ${cmd}\n`).slice(-20000));
+    // Log to CommandCenter's command log if callback is set
+    commandLogCallbackRef.current?.(`[TX] ${cmd}`);
+    try {
+      // Get or reuse writer
+      if (!writerRef.current) {
+        writerRef.current = port.writable.getWriter();
+      }
+      const encoder = new TextEncoder();
+      await writerRef.current.write(encoder.encode(command));
+    } catch (e) {
+      console.error('Send command error', e);
+      // If writer is invalid, clear it so we get a new one next time
+      if (writerRef.current) {
+        try {
+          writerRef.current.releaseLock();
+        } catch {}
+        writerRef.current = null;
+      }
+    }
+  }
 
   // Load persisted data
   useEffect(() => {
@@ -121,6 +169,7 @@ function App() {
   );
 
   const commandResponseCallbackRef = useRef<((line: string) => void) | null>(null);
+  const commandLogCallbackRef = useRef<((line: string) => void) | null>(null);
 
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
@@ -133,6 +182,110 @@ function App() {
       line.includes('USE_BASELINE')
     ) {
       commandResponseCallbackRef.current?.(line);
+
+      // Parse command responses to update shared state
+      if (line.includes('AREA:') || line.includes('STAT:') || line.includes('THRESHOLD')) {
+        const parsed = parseCommandResponse(line);
+        console.log('Parsing command response:', line, '->', parsed);
+
+        if (parsed.type === 'area' && parsed.data) {
+          const areaInfo = parsed.data as AreaInfo;
+          // Add to Dashboard areas set
+          setAreas((prev) => {
+            const next = new Set(prev);
+            next.add(areaInfo.area);
+            return next;
+          });
+          // Update CommandCenter areas data
+          setCommandCenterAreas((prev) => {
+            const next = new Map(prev);
+            const existingArea = next.get(areaInfo.area);
+
+            const newLocations = existingArea ? new Map(existingArea.locations) : new Map<string, string>();
+            const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
+            const newStats = existingArea ? new Map(existingArea.stats) : new Map();
+
+            if (areaInfo.probeId === '' && areaInfo.location === '') {
+              newLocations.clear();
+            } else if (areaInfo.probeId && areaInfo.probeId.trim() && areaInfo.location && areaInfo.location.trim()) {
+              newLocations.set(areaInfo.location, areaInfo.probeId);
+            }
+
+            next.set(areaInfo.area, {
+              area: areaInfo.area,
+              locations: newLocations,
+              thresholds: newThresholds,
+              stats: newStats,
+            });
+
+            return next;
+          });
+        } else if (parsed.type === 'threshold' && parsed.data) {
+          const thresholdInfo = parsed.data as ThresholdInfo;
+          setCommandCenterAreas((prev) => {
+            const next = new Map(prev);
+            const existingArea = next.get(thresholdInfo.area);
+            const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
+            const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
+            const newStats = existingArea ? new Map(existingArea.stats) : new Map();
+
+            // Normalize metric name
+            const upper = thresholdInfo.metric.toUpperCase();
+            const normalizedMetric =
+              upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : thresholdInfo.metric;
+
+            newThresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric });
+
+            if (!existingArea) {
+              next.set(thresholdInfo.area, {
+                area: thresholdInfo.area,
+                locations: newLocations,
+                thresholds: newThresholds,
+                stats: newStats,
+              });
+            } else {
+              next.set(thresholdInfo.area, {
+                ...existingArea,
+                thresholds: newThresholds,
+              });
+            }
+
+            return next;
+          });
+        } else if (parsed.type === 'stat' && parsed.data) {
+          const statInfo = parsed.data as StatInfo;
+          setCommandCenterAreas((prev) => {
+            const next = new Map(prev);
+            const existingArea = next.get(statInfo.area);
+            const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
+            const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
+            const newStats = existingArea ? new Map(existingArea.stats) : new Map();
+
+            // Normalize metric name
+            const upper = statInfo.metric.toUpperCase();
+            const normalizedMetric =
+              upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : statInfo.metric;
+
+            newStats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric });
+
+            if (!existingArea) {
+              next.set(statInfo.area, {
+                area: statInfo.area,
+                locations: newLocations,
+                thresholds: newThresholds,
+                stats: newStats,
+              });
+            } else {
+              next.set(statInfo.area, {
+                ...existingArea,
+                stats: newStats,
+              });
+            }
+
+            return next;
+          });
+        }
+      }
     }
 
     const parsed = parseLine(line);
@@ -152,12 +305,63 @@ function App() {
       alert('Web Serial not supported. Use Chrome/Edge over HTTPS.');
       return;
     }
+    // If already connected, disconnect first
+    if (port) {
+      await handleDisconnect();
+      // Wait a bit for cleanup to complete
+      await new Promise((r) => setTimeout(r, 200));
+    }
     try {
       const p = await (navigator as any).serial.requestPort();
-      await p.open({ baudRate: baud });
+      // Try to open the port, but handle the case where it's already open
+      try {
+        await p.open({ baudRate: baud });
+      } catch (openError: any) {
+        // If port is already open, that's okay - we can still use it
+        if (openError.name === 'InvalidStateError' && openError.message.includes('already open')) {
+          console.log('Port already open, reusing existing connection');
+          // If readable is locked, we need to cancel the reader first, then close and reopen
+          if (p.readable && p.readable.locked) {
+            console.log('Port is open but locked, closing and reopening...');
+            try {
+              // Cancel any existing reader first
+              if (readerRef.current) {
+                try {
+                  await readerRef.current.cancel();
+                } catch {}
+                readerRef.current = null;
+              }
+              // Wait a bit for the stream to unlock
+              await new Promise((r) => setTimeout(r, 200));
+              // Now try to close the port
+              try {
+                await p.close();
+              } catch (closeError: any) {
+                // If close fails because stream is still locked, wait more and try again
+                if (closeError.message && closeError.message.includes('locked')) {
+                  await new Promise((r) => setTimeout(r, 300));
+                  await p.close();
+                } else {
+                  throw closeError;
+                }
+              }
+              await new Promise((r) => setTimeout(r, 100));
+              await p.open({ baudRate: baud });
+            } catch (e) {
+              throw new Error('Failed to reopen port: ' + e);
+            }
+          }
+        } else {
+          // Some other error occurred
+          throw openError;
+        }
+      }
       setPort(p);
       setStatus('Connected. Reading...');
-      startReading(p);
+      // Start reading after a small delay to ensure port is ready
+      setTimeout(() => {
+        startReading(p);
+      }, 100);
       if (simTimer) {
         window.clearInterval(simTimer);
         setSimTimer(null);
@@ -181,34 +385,66 @@ function App() {
   }
 
   async function startReading(p: SerialPort) {
-    const textDecoder = new TextDecoderStream();
-    const readableClosed = p.readable!.pipeTo(textDecoder.writable as WritableStream<Uint8Array>);
-    const reader = (textDecoder.readable as ReadableStream<string>).getReader();
-    readerRef.current = reader as any;
+    // Cancel any existing reader first
+    if (readerRef.current) {
+      try {
+        await readerRef.current.cancel();
+      } catch {}
+      readerRef.current = null;
+    }
 
-    let buffer = '';
-    setStatus('Reading...');
+    if (!p.readable) {
+      console.error('Port readable stream not available');
+      setStatus('Port readable stream not available');
+      return;
+    }
+
+    // Check if readable stream is already locked (has an active reader)
+    if (p.readable.locked) {
+      console.log('Readable stream is locked, waiting a bit...');
+      // Wait a bit and try again
+      await new Promise((r) => setTimeout(r, 200));
+      if (p.readable.locked) {
+        console.log('Readable stream still locked, cannot start reading');
+        setStatus('Port already in use');
+        return;
+      }
+    }
+
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) {
-          buffer += value;
-          let idx;
-          while ((idx = buffer.search(/\r?\n/)) >= 0) {
-            const line = buffer.slice(0, idx);
-            buffer = buffer.slice(idx + 1);
-            await onLine(line.trim());
+      const textDecoder = new TextDecoderStream();
+      const readableClosed = p.readable.pipeTo(textDecoder.writable as WritableStream<Uint8Array>);
+      const reader = (textDecoder.readable as ReadableStream<string>).getReader();
+      readerRef.current = reader as any;
+
+      let buffer = '';
+      setStatus('Reading...');
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            buffer += value;
+            let idx;
+            while ((idx = buffer.search(/\r?\n/)) >= 0) {
+              const line = buffer.slice(0, idx);
+              buffer = buffer.slice(idx + 1);
+              await onLine(line.trim());
+            }
           }
+          await new Promise((r) => setTimeout(r, 0));
         }
-        await new Promise((r) => setTimeout(r, 0));
+      } catch (e) {
+        console.error('Read loop error', e);
+      } finally {
+        readerRef.current = null;
+        try {
+          await readableClosed;
+        } catch {}
       }
     } catch (e) {
-      console.error('Read loop error', e);
-    } finally {
-      try {
-        await readableClosed;
-      } catch {}
+      console.error('Failed to start reading:', e);
+      setStatus('Failed to start reading');
     }
   }
 
@@ -432,6 +668,7 @@ function App() {
         onStartSim={startSim}
         onStopSim={stopSim}
         simRunning={!!simTimer}
+        onGetAreas={() => sendCommand('GET AREAS')}
       />
 
       <Container maxWidth="xl" sx={{ py: 2 }}>
@@ -516,6 +753,10 @@ function App() {
             connected={!!port}
             serialLog={serialLog}
             onCommandResponseRef={commandResponseCallbackRef}
+            onCommandLogRef={commandLogCallbackRef}
+            areas={commandCenterAreas}
+            setAreas={setCommandCenterAreas}
+            sendCommand={sendCommand}
           />
         )}
       </Container>
