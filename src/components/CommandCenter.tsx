@@ -49,6 +49,7 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
   const [loading, setLoading] = useState(false);
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
   const pendingCommandRef = useRef<string | null>(null);
+  const writerRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
 
   // Register callback to receive command responses from App.tsx
   useEffect(() => {
@@ -57,6 +58,19 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
       onCommandResponseRef.current = null;
     };
   }, [onCommandResponseRef]);
+
+  // Initialize writer when port changes
+  useEffect(() => {
+    if (port && port.writable && !writerRef.current) {
+      writerRef.current = port.writable.getWriter();
+    }
+    return () => {
+      if (writerRef.current) {
+        writerRef.current.releaseLock();
+        writerRef.current = null;
+      }
+    };
+  }, [port]);
 
   async function sendCommand(cmd: string) {
     if (!port || !port.writable) {
@@ -67,13 +81,22 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
     setCommandLog((prev) => [...prev, `[TX] ${cmd}`]);
     pendingCommandRef.current = cmd;
     try {
+      // Get or reuse writer
+      if (!writerRef.current) {
+        writerRef.current = port.writable.getWriter();
+      }
       const encoder = new TextEncoder();
-      const writer = port.writable.getWriter();
-      await writer.write(encoder.encode(command));
-      writer.releaseLock();
+      await writerRef.current.write(encoder.encode(command));
     } catch (e) {
       console.error('Send command error', e);
       setCommandLog((prev) => [...prev, `[ERROR] Failed to send: ${e}`]);
+      // If writer is invalid, clear it so we get a new one next time
+      if (writerRef.current) {
+        try {
+          writerRef.current.releaseLock();
+        } catch {}
+        writerRef.current = null;
+      }
     }
   }
 
