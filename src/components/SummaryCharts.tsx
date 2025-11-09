@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ResponsiveContainer, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -116,7 +116,7 @@ export default function SummaryCharts({
             {metric.label}
           </Typography>
           <ResponsiveContainer width="100%" height={320}>
-            <AreaChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+            <ComposedChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis
                 dataKey="time"
@@ -135,42 +135,59 @@ export default function SummaryCharts({
               {areas.map((area) => {
                 const color = paletteForArea(area);
                 const data = aggregate(area, metricInfo[metricKey as keyof typeof metricInfo].key as keyof Sample);
+                const chartData = data.map((row) => ({
+                  time: row.time,
+                  value: row[aggType],
+                  min: row.min,
+                  max: row.max,
+                  range: row.max - row.min,
+                }));
                 return (
-                  <g key={area}>
+                  <React.Fragment key={area}>
                     {showBand && (
-                      <Area
-                        name={`${area} (min–max)`}
-                        data={data.map((row) => ({ time: row.time, bandMin: row.min, bandMax: row.max }))}
-                        dataKey="bandMax"
-                        type="monotone"
-                        stroke="none"
-                        fill={color}
-                        fillOpacity={0.15}
-                        dot={false}
-                        isAnimationActive={false}
-                        activeDot={false}
-                      />
+                      <>
+                        <Area
+                          name={`${area} (min)`}
+                          data={chartData}
+                          dataKey="min"
+                          type="monotone"
+                          stroke="none"
+                          fill={color}
+                          fillOpacity={0.1}
+                          dot={false}
+                          isAnimationActive={false}
+                          activeDot={false}
+                          stackId={`${area}-band`}
+                        />
+                        <Area
+                          name={`${area} (range)`}
+                          data={chartData}
+                          dataKey="range"
+                          type="monotone"
+                          stroke="none"
+                          fill={color}
+                          fillOpacity={0.1}
+                          dot={false}
+                          isAnimationActive={false}
+                          activeDot={false}
+                          stackId={`${area}-band`}
+                        />
+                      </>
                     )}
-                  </g>
+                    <Line
+                      name={`${area} (${aggType})`}
+                      data={chartData}
+                      dataKey="value"
+                      type="monotone"
+                      stroke={color}
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </React.Fragment>
                 );
               })}
-              {areas.map((area) => {
-                const color = paletteForArea(area);
-                const data = aggregate(area, metricInfo[metricKey as keyof typeof metricInfo].key as keyof Sample);
-                return (
-                  <Line
-                    key={area}
-                    name={`${area} (${aggType})`}
-                    data={data.map((row) => ({ time: row.time, value: row[aggType] }))}
-                    dataKey="value"
-                    type="monotone"
-                    stroke={color}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                );
-              })}
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </Paper>
       ))}
