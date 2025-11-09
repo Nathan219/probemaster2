@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ThemeProvider, CssBaseline, Container, Grid, Paper, Typography } from '@mui/material';
+import { ThemeProvider, CssBaseline, Container, Grid, Paper, Typography, Tabs, Tab, Box } from '@mui/material';
 import Header from './components/Header';
 import Filters from './components/Filters';
 import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
 import { ProbesPanel, LocationsPanel, LatestReadings } from './components/Lists';
+import CommandCenter from './components/CommandCenter';
 import { makeTheme } from './theme';
 import { Sample, Probe, Location } from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
@@ -22,6 +23,9 @@ function App() {
   }, [dark]);
 
   const theme = makeTheme(dark);
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState(0);
 
   // Serial
   const [port, setPort] = useState<SerialPort | null>(null);
@@ -417,75 +421,88 @@ function App() {
       />
 
       <Container maxWidth="xl" sx={{ py: 2 }}>
-        <Filters
-          areas={Array.from(areas).sort()}
-          activeAreas={activeAreas}
-          setActiveAreas={setActiveAreas}
-          metricVisibility={metricVisibility}
-          setMetricVisibility={setMetricVisibility}
-          probes={probeListForFilter}
-          activeProbes={activeProbes}
-          setActiveProbes={setActiveProbes}
-          aggType={aggType}
-          setAggType={setAggType}
-          showBand={showBand}
-          setShowBand={setShowBand}
-        />
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+          <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
+            <Tab label="Dashboard" />
+            <Tab label="Command Center" />
+          </Tabs>
+        </Box>
 
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={8}>
-            <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                Individual (Per-Probe)
-              </Typography>
-              <IndividualCharts
-                samples={filteredSamples}
-                probes={probes}
-                locations={locations}
-                activeProbes={activeProbes}
-                metricVisibility={metricVisibility}
-              />
-            </Paper>
+        {activeTab === 0 && (
+          <>
+            <Filters
+              areas={Array.from(areas).sort()}
+              activeAreas={activeAreas}
+              setActiveAreas={setActiveAreas}
+              metricVisibility={metricVisibility}
+              setMetricVisibility={setMetricVisibility}
+              probes={probeListForFilter}
+              activeProbes={activeProbes}
+              setActiveProbes={setActiveProbes}
+              aggType={aggType}
+              setAggType={setAggType}
+              showBand={showBand}
+              setShowBand={setShowBand}
+            />
 
-            <Paper sx={{ p: 2 }} variant="outlined">
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                Summary (Per-Area)
-              </Typography>
-              <SummaryCharts
-                samples={filteredSamples}
-                probes={probes}
-                locations={locations}
-                activeAreas={activeAreas}
-                metricVisibility={metricVisibility}
-                aggType={aggType}
-                showBand={showBand}
-              />
-            </Paper>
-          </Grid>
-
-          <Grid item xs={12} md={4}>
             <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <LatestReadings samples={filteredSamples} probes={probes} locations={locations} />
+              <Grid item xs={12} md={8}>
+                <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Individual (Per-Probe)
+                  </Typography>
+                  <IndividualCharts
+                    samples={filteredSamples}
+                    probes={probes}
+                    locations={locations}
+                    activeProbes={activeProbes}
+                    metricVisibility={metricVisibility}
+                  />
+                </Paper>
+
+                <Paper sx={{ p: 2 }} variant="outlined">
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Summary (Per-Area)
+                  </Typography>
+                  <SummaryCharts
+                    samples={filteredSamples}
+                    probes={probes}
+                    locations={locations}
+                    activeAreas={activeAreas}
+                    metricVisibility={metricVisibility}
+                    aggType={aggType}
+                    showBand={showBand}
+                  />
+                </Paper>
               </Grid>
-              <Grid item xs={12}>
-                <ProbesPanel probes={probes} locations={locations} setProbes={setProbes} />
-              </Grid>
-              <Grid item xs={12}>
-                <LocationsPanel locations={locations} setLocations={setLocations} />
+
+              <Grid item xs={12} md={4}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <LatestReadings samples={filteredSamples} probes={probes} locations={locations} />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <ProbesPanel probes={probes} locations={locations} setProbes={setProbes} />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <LocationsPanel locations={locations} setLocations={setLocations} />
+                  </Grid>
+                </Grid>
               </Grid>
             </Grid>
-          </Grid>
-        </Grid>
 
-        <Paper sx={{ p: 2, my: 2 }} variant="outlined">
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Serial Log
-          </Typography>
-          <pre style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 240, overflow: 'auto' }}>
-            {serialLog || 'No data yet...'}
-          </pre>
-        </Paper>
+            <Paper sx={{ p: 2, my: 2 }} variant="outlined">
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Serial Log
+              </Typography>
+              <pre style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 240, overflow: 'auto' }}>
+                {serialLog || 'No data yet...'}
+              </pre>
+            </Paper>
+          </>
+        )}
+
+        {activeTab === 1 && <CommandCenter port={port} baud={baud} connected={!!port} />}
       </Container>
     </ThemeProvider>
   );
