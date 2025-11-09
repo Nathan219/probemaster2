@@ -354,27 +354,14 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                             </Grid>
                             <Grid item xs={12} md={6}>
                               <Paper variant="outlined" sx={{ p: 2 }}>
-                                <Box
-                                  sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
-                                >
-                                  <Typography variant="caption" color="text.secondary">
-                                    Statistics
-                                  </Typography>
-                                  <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={() => sendCommand(`GET STATS ${areaData.area}`)}
-                                    disabled={!connected}
-                                    sx={{ minWidth: 'auto', px: 1, py: 0.5 }}
-                                  >
-                                    Fetch
-                                  </Button>
-                                </Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                  Statistics
+                                </Typography>
                                 {stat ? (
                                   <StatDisplay stat={stat} />
                                 ) : (
                                   <Typography variant="body2" color="text.secondary">
-                                    Not loaded. Click Fetch to load stats.
+                                    Not loaded. Click "Get Stats" above to load stats.
                                   </Typography>
                                 )}
                               </Paper>
