@@ -66,31 +66,6 @@ export default function Header(p: any) {
               </Button>
             </>
           )}
-          {!simRunning ? (
-            <Button variant="outlined" onClick={onStartSim}>
-              Generate Test Data
-            </Button>
-          ) : (
-            <Button variant="outlined" color="warning" onClick={onStopSim}>
-              Stop Simulation
-            </Button>
-          )}
-          <Button variant="outlined" onClick={onExport}>
-            Export CSV
-          </Button>
-          <Button variant="outlined" component="label">
-            Import CSV/ZIP
-            <input
-              type="file"
-              hidden
-              accept=".csv,.zip"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onImport(f);
-                (e.target as HTMLInputElement).value = '';
-              }}
-            />
-          </Button>
           <Button variant="outlined" onClick={onBackupClear}>
             Backup & Clear
           </Button>
