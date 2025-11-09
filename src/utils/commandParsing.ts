@@ -26,18 +26,45 @@ export type UseBaselineInfo = {
 
 export function parseAreaResponse(line: string): AreaInfo | null {
   // Format: AREA: {AREA} {LOCATION} {PROBE_ID}
-  const match = line.match(/^AREA:\s+(\S+)\s+(\S+)\s+(\S+)$/i);
-  if (!match) return null;
-  return {
-    area: match[1],
-    location: match[2],
-    probeId: match[3],
-  };
+  // or: AREA: {AREA} (no probes)
+  // Strip prefixes like [UART1] WEBd: or WEBd: or [UART1]WEBd:
+  // Find AREA: in the line and extract from there
+  const areaIdx = line.indexOf('AREA:');
+  if (areaIdx === -1) return null;
+  const cleaned = line.slice(areaIdx).trim();
+
+  // Handle case with probe
+  const matchWithProbe = cleaned.match(/^AREA:\s+(\S+)\s+(\S+)\s+(\S+)$/i);
+  if (matchWithProbe) {
+    return {
+      area: matchWithProbe[1],
+      location: matchWithProbe[2],
+      probeId: matchWithProbe[3],
+    };
+  }
+
+  // Handle case without probe: AREA: {AREA} (no probes)
+  const matchNoProbe = cleaned.match(/^AREA:\s+(\S+)\s+\(no\s+probes\)$/i);
+  if (matchNoProbe) {
+    return {
+      area: matchNoProbe[1],
+      location: '',
+      probeId: '',
+    };
+  }
+
+  return null;
 }
 
 export function parseStatResponse(line: string): StatInfo | null {
   // Format: STAT: {AREA} {METRIC} min:{value} max:{value} min_o:{value} max_o:{value}
-  const match = line.match(/^STAT:\s+(\S+)\s+(\S+)\s+min:([-\d.]+)\s+max:([-\d.]+)\s+min_o:([-\d.]+)\s+max_o:([-\d.]+)$/i);
+  // Strip prefixes like [UART1] WEBd: or WEBd:
+  const statIdx = line.indexOf('STAT:');
+  if (statIdx === -1) return null;
+  const cleaned = line.slice(statIdx).trim();
+  const match = cleaned.match(
+    /^STAT:\s+(\S+)\s+(\S+)\s+min:([-\d.]+)\s+max:([-\d.]+)\s+min_o:([-\d.]+)\s+max_o:([-\d.]+)$/i
+  );
   if (!match) return null;
   return {
     area: match[1],
@@ -53,7 +80,11 @@ export function parseThresholdResponse(line: string): ThresholdInfo | null {
   // Format: THRESHOLDS {AREA} {METRIC} [{values}]
   // Example: THRESHOLDS FLOOR11 CO2 [10%, 40%, 70%, 80%, 90%, 95%]
   // or: THRESHOLDS FLOOR11 CO2 [10.0, 40.0, 70.0, 80.0, 90.0, 95.0]
-  const match = line.match(/^THRESHOLDS\s+(\S+)\s+(\S+)\s+\[(.*?)\]$/i);
+  // Strip prefixes like [UART1] WEBd: or WEBd:
+  const thresholdIdx = line.indexOf('THRESHOLDS');
+  if (thresholdIdx === -1) return null;
+  const cleaned = line.slice(thresholdIdx).trim();
+  const match = cleaned.match(/^THRESHOLDS\s+(\S+)\s+(\S+)\s+\[(.*?)\]$/i);
   if (!match) return null;
   const valuesStr = match[3];
   const values = valuesStr
@@ -73,7 +104,11 @@ export function parseThresholdResponse(line: string): ThresholdInfo | null {
 
 export function parseUseBaselineResponse(line: string): UseBaselineInfo | null {
   // Format: USE_BASELINE {AREA} {True/False}
-  const match = line.match(/^USE_BASELINE\s+(\S+)\s+(True|False)$/i);
+  // Strip prefixes like [UART1] WEBd: or WEBd:
+  const baselineIdx = line.indexOf('USE_BASELINE');
+  if (baselineIdx === -1) return null;
+  const cleaned = line.slice(baselineIdx).trim();
+  const match = cleaned.match(/^USE_BASELINE\s+(\S+)\s+(True|False)$/i);
   if (!match) return null;
   return {
     area: match[1],
@@ -85,19 +120,18 @@ export function parseCommandResponse(line: string): {
   type: 'area' | 'stat' | 'threshold' | 'use_baseline' | 'unknown';
   data: AreaInfo | StatInfo | ThresholdInfo | UseBaselineInfo | null;
 } {
-  const trimmed = line.trim();
-  if (trimmed.startsWith('AREA:')) {
-    return { type: 'area', data: parseAreaResponse(trimmed) };
+  // Check for command keywords in the line (handles prefixes automatically)
+  if (line.includes('AREA:')) {
+    return { type: 'area', data: parseAreaResponse(line) };
   }
-  if (trimmed.startsWith('STAT:')) {
-    return { type: 'stat', data: parseStatResponse(trimmed) };
+  if (line.includes('STAT:')) {
+    return { type: 'stat', data: parseStatResponse(line) };
   }
-  if (trimmed.startsWith('THRESHOLDS')) {
-    return { type: 'threshold', data: parseThresholdResponse(trimmed) };
+  if (line.includes('THRESHOLDS')) {
+    return { type: 'threshold', data: parseThresholdResponse(line) };
   }
-  if (trimmed.startsWith('USE_BASELINE')) {
-    return { type: 'use_baseline', data: parseUseBaselineResponse(trimmed) };
+  if (line.includes('USE_BASELINE')) {
+    return { type: 'use_baseline', data: parseUseBaselineResponse(line) };
   }
   return { type: 'unknown', data: null };
 }
-
