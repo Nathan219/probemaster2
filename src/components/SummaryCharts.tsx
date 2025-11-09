@@ -64,45 +64,45 @@ export default function SummaryCharts({
 }) {
   const areaSamples = useMemo(() => {
     const map: Record<string, Sample[]> = {};
-    for (const s of samples) {
+    for (const sample of samples) {
       // Normalize probe ID to match the format used in probes
-      const normalizedProbeId = normalizeProbeId(s.probeId);
-      const probe = probes[normalizedProbeId] || probes[s.probeId];
+      const normalizedProbeId = normalizeProbeId(sample.probeId);
+      const probe = probes[normalizedProbeId] || probes[sample.probeId];
       if (!probe) {
         // Probe not found, assign to Unassigned
         const area = 'Unassigned';
         if (activeAreas.has('All') || activeAreas.has(area)) {
-          (map[area] ||= []).push(s);
+          (map[area] ||= []).push(sample);
         }
         continue;
       }
-      const loc = probe.locationId ? locations[probe.locationId] : null;
-      const area = loc?.area || 'Unassigned';
+      const location = probe.locationId ? locations[probe.locationId] : null;
+      const area = location?.area || 'Unassigned';
       if (!(activeAreas.has('All') || activeAreas.has(area))) continue;
-      (map[area] ||= []).push(s);
+      (map[area] ||= []).push(sample);
     }
     return map;
   }, [samples, probes, locations, activeAreas]);
 
-  const metrics = Object.entries(metricInfo).filter(([k]) => (metricVisibility as any)[k]);
+  const metrics = Object.entries(metricInfo).filter(([metricKey]) => (metricVisibility as any)[metricKey]);
 
   function aggregate(area: string, key: keyof Sample): AggRow[] {
     const rows = areaSamples[area] || [];
     const buckets: Record<number, number[]> = {};
-    for (const r of rows) {
-      const t = Math.floor(r.ts / 60000) * 60000;
-      (buckets[t] ||= []).push((r as any)[key] ?? NaN);
+    for (const sample of rows) {
+      const timestamp = Math.floor(sample.ts / 60000) * 60000;
+      (buckets[timestamp] ||= []).push((sample as any)[key] ?? NaN);
     }
     const out: AggRow[] = [];
-    for (const t of Object.keys(buckets)
+    for (const timestamp of Object.keys(buckets)
       .map(Number)
-      .sort((a, b) => a - b)) {
-      const vals = buckets[t].filter((v) => Number.isFinite(v));
-      if (!vals.length) continue;
-      const min = Math.min(...vals),
-        max = Math.max(...vals),
-        avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      out.push({ time: t, min, avg, max });
+      .sort((timeA, timeB) => timeA - timeB)) {
+      const values = buckets[timestamp].filter((value) => Number.isFinite(value));
+      if (!values.length) continue;
+      const min = Math.min(...values),
+        max = Math.max(...values),
+        avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+      out.push({ time: timestamp, min, avg, max });
     }
     return out;
   }
@@ -110,10 +110,10 @@ export default function SummaryCharts({
   const areas = Object.keys(areaSamples);
   return (
     <Stack spacing={2}>
-      {metrics.map(([mKey, m]) => (
-        <Paper key={mKey} sx={{ p: 2 }} variant="outlined">
+      {metrics.map(([metricKey, metric]) => (
+        <Paper key={metricKey} sx={{ p: 2 }} variant="outlined">
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            {m.label}
+            {metric.label}
           </Typography>
           <ResponsiveContainer width="100%" height={320}>
             <AreaChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
@@ -122,25 +122,25 @@ export default function SummaryCharts({
                 dataKey="time"
                 type="number"
                 domain={['auto', 'auto']}
-                tickFormatter={(v) =>
-                  new Date(v as number).toLocaleTimeString([], {
+                tickFormatter={(timestamp) =>
+                  new Date(timestamp as number).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
                   })
                 }
               />
               <YAxis />
-              <Tooltip labelFormatter={(v) => new Date(+v).toLocaleTimeString()} />
+              <Tooltip labelFormatter={(timestamp) => new Date(+timestamp).toLocaleTimeString()} />
               <Legend />
               {areas.map((area) => {
                 const color = paletteForArea(area);
-                const data = aggregate(area, metricInfo[mKey as keyof typeof metricInfo].key as keyof Sample);
+                const data = aggregate(area, metricInfo[metricKey as keyof typeof metricInfo].key as keyof Sample);
                 return (
                   <g key={area}>
                     {showBand && (
                       <Area
                         name={`${area} (min–max)`}
-                        data={data.map((d) => ({ time: d.time, bandMin: d.min, bandMax: d.max }))}
+                        data={data.map((row) => ({ time: row.time, bandMin: row.min, bandMax: row.max }))}
                         dataKey="bandMax"
                         type="monotone"
                         stroke="none"
@@ -156,12 +156,12 @@ export default function SummaryCharts({
               })}
               {areas.map((area) => {
                 const color = paletteForArea(area);
-                const data = aggregate(area, metricInfo[mKey as keyof typeof metricInfo].key as keyof Sample);
+                const data = aggregate(area, metricInfo[metricKey as keyof typeof metricInfo].key as keyof Sample);
                 return (
                   <Line
                     key={area}
                     name={`${area} (${aggType})`}
-                    data={data.map((d) => ({ time: d.time, value: d[aggType] }))}
+                    data={data.map((row) => ({ time: row.time, value: row[aggType] }))}
                     dataKey="value"
                     type="monotone"
                     stroke={color}
