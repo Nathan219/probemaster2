@@ -13,6 +13,7 @@ import {
   Alert,
   CircularProgress,
   Container,
+  Chip,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from '../utils/commandParsing';
@@ -47,6 +48,7 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
   const [commandLog, setCommandLog] = useState<string[]>([]);
   const [areas, setAreas] = useState<Map<string, AreaData>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
   const pendingCommandRef = useRef<string | null>(null);
   const writerRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
@@ -119,14 +121,19 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
             });
           }
           const areaData = next.get(areaInfo.area)!;
-          // Only add location if there's a probe
-          if (areaInfo.probeId && areaInfo.location) {
+          // If no probe (empty strings), clear locations for this area
+          if (!areaInfo.probeId || !areaInfo.probeId.trim() || !areaInfo.location || !areaInfo.location.trim()) {
+            areaData.locations.clear();
+          } else {
+            // Only add location if there's a probe (check for non-empty strings)
             areaData.locations.set(areaInfo.location, areaInfo.probeId);
           }
           return next;
         });
       } else if (parsed.type === 'threshold' && parsed.data) {
         const thresholdInfo = parsed.data as ThresholdInfo;
+        // Normalize metric name from firmware format to display format
+        const normalizedMetric = normalizeMetricName(thresholdInfo.metric);
         setAreas((prev) => {
           const next = new Map(prev);
           if (!next.has(thresholdInfo.area)) {
@@ -138,7 +145,8 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
             });
           }
           const areaData = next.get(thresholdInfo.area)!;
-          areaData.thresholds.set(thresholdInfo.metric, thresholdInfo);
+          // Store with normalized metric name
+          areaData.thresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric });
           return next;
         });
       } else if (parsed.type === 'stat' && parsed.data) {
@@ -237,23 +245,6 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                   >
                     GET STATS
                   </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => {
-                      // Fetch thresholds for all areas and metrics
-                      const metrics = ['CO2', 'Temp', 'Hum', 'Sound'];
-                      Array.from(areas.values()).forEach((areaData) => {
-                        metrics.forEach((metric) => {
-                          sendCommand(`GET THRESHOLDS ${areaData.area} ${metric}`);
-                        });
-                      });
-                    }}
-                    disabled={!connected || areas.size === 0}
-                    fullWidth
-                  >
-                    GET THRESHOLDS
-                  </Button>
                 </Stack>
               </Box>
             </Stack>
@@ -293,6 +284,52 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
             <Typography variant="h6" sx={{ mb: 2 }}>
               Areas Configuration
             </Typography>
+            {areas.size > 0 && (
+              <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {Array.from(areas.values())
+                  .sort((a, b) => a.area.localeCompare(b.area))
+                  .map((areaData) => (
+                    <Chip
+                      key={areaData.area}
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <span>{areaData.area}</span>
+                          {areaData.locations.size > 0 && (
+                            <Box
+                              component="span"
+                              sx={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                bgcolor: 'success.main',
+                                display: 'inline-block',
+                              }}
+                            />
+                          )}
+                        </Box>
+                      }
+                      onClick={() => {
+                        // Expand the accordion
+                        setExpandedAreas((prev) => {
+                          const next = new Set(prev);
+                          next.add(areaData.area);
+                          return next;
+                        });
+                        // Scroll to the area
+                        setTimeout(() => {
+                          const element = document.getElementById(`area-${areaData.area}`);
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }
+                        }, 100);
+                      }}
+                      variant={areaData.locations.size > 0 ? 'filled' : 'outlined'}
+                      color={areaData.locations.size > 0 ? 'primary' : 'default'}
+                      sx={{ cursor: 'pointer' }}
+                    />
+                  ))}
+              </Box>
+            )}
             {loading && (
               <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
                 <CircularProgress />
@@ -302,7 +339,23 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
               <Alert severity="info">No areas discovered yet. Send GET AREAS to discover areas.</Alert>
             )}
             {Array.from(areas.values()).map((areaData) => (
-              <Accordion key={areaData.area} sx={{ mb: 1 }}>
+              <Accordion
+                key={areaData.area}
+                id={`area-${areaData.area}`}
+                expanded={expandedAreas.has(areaData.area)}
+                onChange={(_, isExpanded) => {
+                  setExpandedAreas((prev) => {
+                    const next = new Set(prev);
+                    if (isExpanded) {
+                      next.add(areaData.area);
+                    } else {
+                      next.delete(areaData.area);
+                    }
+                    return next;
+                  });
+                }}
+                sx={{ mb: 1 }}
+              >
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Box
                     sx={{

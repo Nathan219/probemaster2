@@ -77,29 +77,57 @@ export function parseStatResponse(line: string): StatInfo | null {
 }
 
 export function parseThresholdResponse(line: string): ThresholdInfo | null {
-  // Format: THRESHOLDS {AREA} {METRIC} [{values}]
+  // Format 1: THRESHOLD {AREA} {METRIC} {value1} {value2} ... {value6}
+  // Example: THRESHOLD FLOOR11 CO2 100.00 200.00 300.00 400.00 500.00 600.00
+  // Format 2: THRESHOLDS {AREA} {METRIC} [{values}]
   // Example: THRESHOLDS FLOOR11 CO2 [10%, 40%, 70%, 80%, 90%, 95%]
   // or: THRESHOLDS FLOOR11 CO2 [10.0, 40.0, 70.0, 80.0, 90.0, 95.0]
   // Strip prefixes like [UART1] WEBd: or WEBd:
-  const thresholdIdx = line.indexOf('THRESHOLDS');
+  const thresholdIdx = line.indexOf('THRESHOLD');
   if (thresholdIdx === -1) return null;
   const cleaned = line.slice(thresholdIdx).trim();
-  const match = cleaned.match(/^THRESHOLDS\s+(\S+)\s+(\S+)\s+\[(.*?)\]$/i);
-  if (!match) return null;
-  const valuesStr = match[3];
-  const values = valuesStr
-    .split(',')
-    .map((v) => {
-      const cleaned = v.trim().replace(/%$/, '');
-      const num = parseFloat(cleaned);
-      return isNaN(num) ? -1 : num;
-    })
-    .filter((v) => v !== -1 || valuesStr.includes('-1'));
-  return {
-    area: match[1],
-    metric: match[2],
-    values: values.length === 6 ? values : Array(6).fill(-1),
-  };
+  
+  // Try format 1: THRESHOLD {AREA} {METRIC} {value1} {value2} ... {value6}
+  const match1 = cleaned.match(/^THRESHOLD\s+(\S+)\s+(\S+)\s+(.+)$/i);
+  if (match1) {
+    const valuesStr = match1[3].trim();
+    const values = valuesStr
+      .split(/\s+/)
+      .map((v) => {
+        const num = parseFloat(v);
+        return isNaN(num) ? -1 : num;
+      });
+    // Always return 6 values, padding with -1 if needed
+    while (values.length < 6) {
+      values.push(-1);
+    }
+    return {
+      area: match1[1],
+      metric: match1[2],
+      values: values.slice(0, 6),
+    };
+  }
+  
+  // Try format 2: THRESHOLDS {AREA} {METRIC} [{values}]
+  const match2 = cleaned.match(/^THRESHOLDS\s+(\S+)\s+(\S+)\s+\[(.*?)\]$/i);
+  if (match2) {
+    const valuesStr = match2[3];
+    const values = valuesStr
+      .split(',')
+      .map((v) => {
+        const cleaned = v.trim().replace(/%$/, '');
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? -1 : num;
+      })
+      .filter((v) => v !== -1 || valuesStr.includes('-1'));
+    return {
+      area: match2[1],
+      metric: match2[2],
+      values: values.length === 6 ? values : Array(6).fill(-1),
+    };
+  }
+  
+  return null;
 }
 
 export function parseUseBaselineResponse(line: string): UseBaselineInfo | null {
@@ -127,7 +155,7 @@ export function parseCommandResponse(line: string): {
   if (line.includes('STAT:')) {
     return { type: 'stat', data: parseStatResponse(line) };
   }
-  if (line.includes('THRESHOLDS')) {
+  if (line.includes('THRESHOLD')) {
     return { type: 'threshold', data: parseThresholdResponse(line) };
   }
   if (line.includes('USE_BASELINE')) {

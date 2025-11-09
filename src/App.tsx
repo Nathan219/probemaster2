@@ -129,7 +129,7 @@ function App() {
     if (
       line.includes('AREA:') ||
       line.includes('STAT:') ||
-      line.includes('THRESHOLDS') ||
+      line.includes('THRESHOLD') ||
       line.includes('USE_BASELINE')
     ) {
       commandResponseCallbackRef.current?.(line);
