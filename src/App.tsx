@@ -120,8 +120,21 @@ function App() {
     [samples, visibleProbeIds]
   );
 
+  const commandResponseCallbackRef = useRef<((line: string) => void) | null>(null);
+
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
+
+    // Check if this is a command response and route to CommandCenter
+    if (
+      line.includes('AREA:') ||
+      line.includes('STAT:') ||
+      line.includes('THRESHOLDS') ||
+      line.includes('USE_BASELINE')
+    ) {
+      commandResponseCallbackRef.current?.(line);
+    }
+
     const parsed = parseLine(line);
     if (!parsed) return;
     pending.current.push(parsed);
@@ -496,7 +509,15 @@ function App() {
           </>
         )}
 
-        {activeTab === 1 && <CommandCenter port={port} baud={baud} connected={!!port} serialLog={serialLog} />}
+        {activeTab === 1 && (
+          <CommandCenter
+            port={port}
+            baud={baud}
+            connected={!!port}
+            serialLog={serialLog}
+            onCommandResponseRef={commandResponseCallbackRef}
+          />
+        )}
       </Container>
     </ThemeProvider>
   );
