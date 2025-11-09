@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from '../utils/commandParsing';
+import SerialLog from './SerialLog';
 
 type AreaData = {
   area: string;
@@ -28,9 +29,10 @@ interface CommandCenterProps {
   port: SerialPort | null;
   baud: number;
   connected: boolean;
+  serialLog: string;
 }
 
-export default function CommandCenter({ port, baud, connected }: CommandCenterProps) {
+export default function CommandCenter({ port, baud, connected, serialLog }: CommandCenterProps) {
   const [commandInput, setCommandInput] = useState('');
   const [commandLog, setCommandLog] = useState<string[]>([]);
   const [areas, setAreas] = useState<Map<string, AreaData>>(new Map());
@@ -366,6 +368,8 @@ export default function CommandCenter({ port, baud, connected }: CommandCenterPr
           </Paper>
         </Grid>
       </Grid>
+
+      <SerialLog log={serialLog} maxHeight={300} />
     </Container>
   );
 }

@@ -6,6 +6,7 @@ import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
 import { ProbesPanel, LocationsPanel, LatestReadings } from './components/Lists';
 import CommandCenter from './components/CommandCenter';
+import SerialLog from './components/SerialLog';
 import { makeTheme } from './theme';
 import { Sample, Probe, Location } from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
@@ -491,18 +492,11 @@ function App() {
               </Grid>
             </Grid>
 
-            <Paper sx={{ p: 2, my: 2 }} variant="outlined">
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Serial Log
-              </Typography>
-              <pre style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 240, overflow: 'auto' }}>
-                {serialLog || 'No data yet...'}
-              </pre>
-            </Paper>
+            <SerialLog log={serialLog} />
           </>
         )}
 
-        {activeTab === 1 && <CommandCenter port={port} baud={baud} connected={!!port} />}
+        {activeTab === 1 && <CommandCenter port={port} baud={baud} connected={!!port} serialLog={serialLog} />}
       </Container>
     </ThemeProvider>
   );
