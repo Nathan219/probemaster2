@@ -448,6 +448,10 @@ function App() {
       setTimeout(() => {
         startReading(p);
       }, 100);
+      // Call GET AREAS after connection is established
+      setTimeout(() => {
+        sendCommand('GET AREAS');
+      }, 300);
       if (simTimer) {
         window.clearInterval(simTimer);
         setSimTimer(null);
