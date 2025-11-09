@@ -117,7 +117,7 @@ export function LatestReadings({
   return (
     <Paper sx={{ p: 2 }} variant="outlined">
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        Latest Readings
+        <b>Latest Readings</b>
       </Typography>
       <Stack spacing={1} maxHeight={350} sx={{ overflow: 'auto' }}>
         {Object.keys(probes).length === 0 && (
@@ -132,29 +132,33 @@ export function LatestReadings({
           return (
             <Paper key={probe.id} variant="outlined" sx={{ p: 1.5 }}>
               <Typography sx={{ fontFamily: 'monospace' }}>{probe.id}</Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                 Location: {label}
               </Typography>
+
+              {latestReading && (
+                <Typography variant="body2" color="text.secondary">
+                  Latest reading: {new Date(latestReading.ts).toLocaleTimeString()}
+                </Typography>
+              )}
               {latestReading ? (
                 <Stack direction="row" spacing={2} sx={{ mt: 0.5 }}>
                   <Typography variant="body2">
                     CO₂: <b>{latestReading.co2}</b>
                   </Typography>
                   <Typography variant="body2">
-                    Temp: <b>{latestReading.temp.toFixed(2)}</b>°C
+                    <b>Temp:</b> {latestReading.temp.toFixed(2)}°C
                   </Typography>
                   <Typography variant="body2">
-                    Hum: <b>{latestReading.hum.toFixed(2)}</b>%
+                    <b>Hum: </b>
+                    {latestReading.hum.toFixed(2)}%
                   </Typography>
                   <Typography variant="body2">
-                    Sound: <b>{latestReading.sound}</b>
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {new Date(latestReading.ts).toLocaleTimeString()}
+                    <b>Sound:</b> {latestReading.sound}dB
                   </Typography>
                 </Stack>
               ) : (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="body2" color="text.secondary">
                   No data yet
                 </Typography>
               )}
