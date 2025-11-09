@@ -127,11 +127,7 @@ function App() {
     })().catch(console.error);
   }, []);
 
-  useEffect(() => {
-    const set = new Set<string>();
-    Object.values(locations).forEach((l) => set.add(l.area));
-    setAreas(set);
-  }, [locations]);
+  // Areas are now only populated from GET AREAS command responses, not from locations
 
   useEffect(() => {
     if (activeProbes.size === 0 && Object.keys(probes).length) {
