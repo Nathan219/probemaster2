@@ -176,23 +176,42 @@ function App() {
     return probs;
   }, [commandCenterAreas, dashboardLocations]);
 
+  // Helper function to normalize probe ID (strip prefixes like [UART2])
+  function normalizeProbeId(probeId: string): string {
+    // Remove prefixes like [UART2], [UART1], etc.
+    const match = probeId.match(/\[.*?\]\s*(.+)$/);
+    return match ? match[1].trim() : probeId.trim();
+  }
+
   // Merge dashboard probes with sensor data probes
   const allProbes = useMemo(() => {
     const merged = { ...dashboardProbes };
     // Add probes from sensor data that aren't in dashboardProbes
     Object.values(probes).forEach((p) => {
-      if (!merged[p.id]) {
-        // Try to find area from dashboardLocations if probe has locationId
-        const locationId = p.locationId;
-        const location = locationId ? dashboardLocations[locationId] : null;
-        merged[p.id] = {
-          id: p.id,
+      const normalizedId = normalizeProbeId(p.id);
+      // Use normalized ID for the merged probe
+      if (!merged[normalizedId]) {
+        // Try to find this probe in commandCenterAreas to get its location
+        let locationId: string | null = null;
+        for (const [area, areaData] of commandCenterAreas.entries()) {
+          for (const [locName, probeId] of areaData.locations.entries()) {
+            if (probeId === normalizedId) {
+              // Found the probe, create the location ID using the same format as dashboardLocations
+              const locId = `${area}-${locName}`;
+              locationId = locId;
+              break;
+            }
+          }
+          if (locationId) break;
+        }
+        merged[normalizedId] = {
+          id: normalizedId,
           locationId: locationId || null,
         };
       }
     });
     return merged;
-  }, [dashboardProbes, probes, dashboardLocations]);
+  }, [dashboardProbes, probes, commandCenterAreas]);
 
   const visibleProbeIds = useMemo(() => {
     const allowed = new Set<string>();
@@ -202,16 +221,28 @@ function App() {
         allowed.add(p.id);
       }
     }
-    // If no probes match area filter but we have samples, include all probes with samples
+    // If no probes match area filter but we have samples, include all probes with samples (normalized)
     if (allowed.size === 0 && samples.length > 0) {
-      const probeIdsFromSamples = new Set(samples.map((s) => s.probeId));
+      const probeIdsFromSamples = new Set(samples.map((s) => normalizeProbeId(s.probeId)));
       probeIdsFromSamples.forEach((id) => allowed.add(id));
     }
-    return new Set([...allowed].filter((id) => activeProbes.has(id) || activeProbes.size === 0));
+    // Also need to check if samples have probe IDs that match (with normalization)
+    const normalizedActiveProbes = new Set(Array.from(activeProbes).map((id) => normalizeProbeId(id)));
+    const normalizedAllowed = new Set(Array.from(allowed).map((id) => normalizeProbeId(id)));
+    return new Set(
+      [...allowed].filter((id) => {
+        const normalizedId = normalizeProbeId(id);
+        return normalizedActiveProbes.has(normalizedId) || normalizedActiveProbes.size === 0;
+      })
+    );
   }, [activeAreas, allProbes, dashboardLocations, activeProbes, samples]);
 
   const filteredSamples = useMemo(
-    () => samples.filter((s) => visibleProbeIds.has(s.probeId)),
+    () =>
+      samples.filter((s) => {
+        const normalizedId = normalizeProbeId(s.probeId);
+        return visibleProbeIds.has(normalizedId) || visibleProbeIds.has(s.probeId);
+      }),
     [samples, visibleProbeIds]
   );
 
@@ -239,7 +270,6 @@ function App() {
       // Parse command responses to update shared state
       if (line.includes('AREA:') || line.includes('STAT:') || line.includes('THRESHOLD')) {
         const parsed = parseCommandResponse(line);
-        console.log('Parsing command response:', line, '->', parsed);
 
         if (parsed.type === 'area' && parsed.data) {
           const areaInfo = parsed.data as AreaInfo;
@@ -343,14 +373,17 @@ function App() {
 
     const parsed = parseLine(line);
     if (!parsed) return;
-    pending.current.push(parsed);
-    if (!probes[parsed.probeId]) {
-      const newProbe: Probe = { id: parsed.probeId, locationId: null };
+    // Normalize probe ID to strip prefixes like [UART2]
+    const normalizedProbeId = normalizeProbeId(parsed.probeId);
+    const normalizedSample = { ...parsed, probeId: normalizedProbeId };
+    pending.current.push(normalizedSample);
+    if (!probes[normalizedProbeId]) {
+      const newProbe: Probe = { id: normalizedProbeId, locationId: null };
       setProbes((prev) => ({ ...prev, [newProbe.id]: newProbe }));
       await idbPut('probes', newProbe);
       setActiveProbes((prev) => new Set(prev).add(newProbe.id));
     }
-    await idbBulkAddSamples([parsed]);
+    await idbBulkAddSamples([normalizedSample]);
   }
 
   async function handleConnect() {

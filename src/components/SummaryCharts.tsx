@@ -5,6 +5,13 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { Sample, Location, Probe } from '../utils/types';
 
+// Helper function to normalize probe ID (strip prefixes like [UART2])
+function normalizeProbeId(probeId: string): string {
+  // Remove prefixes like [UART2], [UART1], etc.
+  const match = probeId.match(/\[.*?\]\s*(.+)$/);
+  return match ? match[1].trim() : probeId.trim();
+}
+
 const metricInfo = {
   CO2: { key: 'co2', label: 'CO₂ (ppm)' },
   Temp: { key: 'temp', label: 'Temperature (°C)' },
@@ -13,13 +20,27 @@ const metricInfo = {
 } as const;
 
 function paletteForArea(area: string) {
-  const areas = ['10th Floor', 'Tea Room', 'Pool', 'Unassigned'];
-  const colors = ['#7E57C2', '#26A69A', '#FFB74D', '#42A5F5'];
-  const idx = Math.max(
-    0,
-    areas.findIndex((a) => a === area)
-  );
-  return colors[idx % colors.length];
+  // Use a color palette that works for any area name
+  const colors = [
+    '#7E57C2',
+    '#26A69A',
+    '#FFB74D',
+    '#42A5F5',
+    '#EF5350',
+    '#66BB6A',
+    '#FFA726',
+    '#AB47BC',
+    '#26C6DA',
+    '#FFCA28',
+  ];
+
+  // Generate a consistent color index based on area name hash
+  let hash = 0;
+  for (let i = 0; i < area.length; i++) {
+    hash = area.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % colors.length;
+  return colors[idx];
 }
 
 type AggRow = { time: number; min: number; avg: number; max: number };
@@ -44,7 +65,18 @@ export default function SummaryCharts({
   const areaSamples = useMemo(() => {
     const map: Record<string, Sample[]> = {};
     for (const s of samples) {
-      const loc = probes[s.probeId]?.locationId ? locations[probes[s.probeId].locationId!] : null;
+      // Normalize probe ID to match the format used in probes
+      const normalizedProbeId = normalizeProbeId(s.probeId);
+      const probe = probes[normalizedProbeId] || probes[s.probeId];
+      if (!probe) {
+        // Probe not found, assign to Unassigned
+        const area = 'Unassigned';
+        if (activeAreas.has('All') || activeAreas.has(area)) {
+          (map[area] ||= []).push(s);
+        }
+        continue;
+      }
+      const loc = probe.locationId ? locations[probe.locationId] : null;
       const area = loc?.area || 'Unassigned';
       if (!(activeAreas.has('All') || activeAreas.has(area))) continue;
       (map[area] ||= []).push(s);
