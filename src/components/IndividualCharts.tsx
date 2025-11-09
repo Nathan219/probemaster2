@@ -38,7 +38,12 @@ export default function IndividualCharts({ samples, probes, locations, activePro
     for (const probeId of Object.keys(seriesByProbe)) {
       const probe = probes[probeId];
       const location = probe?.locationId ? locations[probe.locationId] : null;
-      labels[probeId] = location ? `${probeId} (${location.area} / ${location.name})` : probeId;
+      if (location) {
+        // Show area name prominently: [Area] ProbeId (Location)
+        labels[probeId] = `${location.area} ${location.name} (Probe ${probeId})`;
+      } else {
+        labels[probeId] = `Unassigned Probe ${probeId}`;
+      }
     }
     return labels;
   }, [seriesByProbe, probes, locations]);
