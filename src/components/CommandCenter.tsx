@@ -391,7 +391,7 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                       </Typography>
                       {areaData.locations.size === 0 ? (
                         <Typography variant="body2" color="text.secondary">
-                          No probes assigned
+                          No Probes Assigned
                         </Typography>
                       ) : (
                         Array.from(areaData.locations.entries()).map(([location, probeId]) => (

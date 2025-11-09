@@ -33,23 +33,24 @@ export function parseAreaResponse(line: string): AreaInfo | null {
   if (areaIdx === -1) return null;
   const cleaned = line.slice(areaIdx).trim();
 
-  // Handle case with probe
-  const matchWithProbe = cleaned.match(/^AREA:\s+(\S+)\s+(\S+)\s+(\S+)$/i);
-  if (matchWithProbe) {
-    return {
-      area: matchWithProbe[1],
-      location: matchWithProbe[2],
-      probeId: matchWithProbe[3],
-    };
-  }
-
-  // Handle case without probe: AREA: {AREA} (no probes)
+  // Handle case without probe FIRST: AREA: {AREA} (no probes)
+  // This must be checked before the three-word pattern to avoid matching "(no" and "probes)" separately
   const matchNoProbe = cleaned.match(/^AREA:\s+(\S+)\s+\(no\s+probes\)$/i);
   if (matchNoProbe) {
     return {
       area: matchNoProbe[1],
       location: '',
       probeId: '',
+    };
+  }
+
+  // Handle case with probe: AREA: {AREA} {LOCATION} {PROBE_ID}
+  const matchWithProbe = cleaned.match(/^AREA:\s+(\S+)\s+(\S+)\s+(\S+)$/i);
+  if (matchWithProbe) {
+    return {
+      area: matchWithProbe[1],
+      location: matchWithProbe[2],
+      probeId: matchWithProbe[3],
     };
   }
 
