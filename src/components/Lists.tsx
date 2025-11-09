@@ -76,10 +76,10 @@ export function ProbesPanel({
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         Probes
       </Typography>
-      <Stack spacing={1} maxHeight={350} sx={{ overflow: 'auto' }}>
+      <Stack spacing={1} maxHeight={350} sx={{ overflow: 'auto', pt: 0.5 }}>
         {Object.values(probes).map((probe: any) => (
-          <Stack key={probe.id} direction="row" spacing={1} alignItems="center">
-            <Typography sx={{ fontFamily: 'monospace' }}>{probe.id}</Typography>
+          <Stack key={probe.id} direction="row" spacing={1} alignItems="flex-start">
+            <Typography sx={{ fontFamily: 'monospace', pt: 1.5 }}>{probe.id}</Typography>
             <TextField
               select
               size="small"
