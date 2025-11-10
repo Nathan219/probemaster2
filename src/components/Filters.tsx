@@ -6,6 +6,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
+import { AreaName } from '../utils/types';
 
 export default function Filters(p: any) {
   const {
@@ -26,26 +27,33 @@ export default function Filters(p: any) {
     <Stack spacing={2} sx={{ p: 2 }}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
         <Typography variant="subtitle2">Areas:</Typography>
-        {['All', ...areas].map((a: string) => (
-          <Chip
-            key={a}
-            label={a}
-            color={activeAreas.has(a) ? 'primary' : 'default'}
-            variant={activeAreas.has(a) ? 'filled' : 'outlined'}
-            onClick={() => {
-              const next = new Set(activeAreas);
-              if (a === 'All') {
-                next.clear();
-                next.add('All');
-              } else {
-                // When clicking an individual area, clear all others and select only this one
-                next.clear();
-                next.add(a);
-              }
-              setActiveAreas(next);
-            }}
-          />
-        ))}
+        {['All', ...Object.values(AreaName)].map((a: string) => {
+          // Areas are now stored with normalized names, so direct check should work
+          const hasData = a === 'All' || areas.includes(a);
+          return (
+            <Chip
+              key={a}
+              label={a}
+              color={activeAreas.has(a) ? 'primary' : 'default'}
+              variant={activeAreas.has(a) ? 'filled' : 'outlined'}
+              onClick={() => {
+                const next = new Set(activeAreas);
+                if (a === 'All') {
+                  next.clear();
+                  next.add('All');
+                } else {
+                  // When clicking an individual area, clear all others and select only this one
+                  next.clear();
+                  next.add(a);
+                }
+                setActiveAreas(next);
+              }}
+              sx={{
+                opacity: hasData ? 1 : 0.5,
+              }}
+            />
+          );
+        })}
       </Stack>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
         <Typography variant="subtitle2">Metrics:</Typography>

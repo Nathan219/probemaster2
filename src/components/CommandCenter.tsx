@@ -19,7 +19,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ThresholdInfo, StatInfo } from '../utils/commandParsing';
 import SerialLog from './SerialLog';
 import { ProbesPanel, UnassignProbesPanel } from './Lists';
-import { Probe, Location } from '../utils/types';
+import { Probe, Location, AreaName } from '../utils/types';
 
 export type AreaData = {
   area: string;
@@ -225,17 +225,21 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                 </Box>
               </Alert>
             )}
-            {areas.size > 0 && (
-              <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {Array.from(areas.values())
-                  .sort((a, b) => a.area.localeCompare(b.area))
-                  .map((areaData) => (
+            <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {Object.values(AreaName)
+                .sort((a, b) => a.localeCompare(b))
+                .map((areaName) => {
+                  // Areas are now stored with normalized names, so direct lookup should work
+                  const areaData = areas.get(areaName);
+                  const hasData = !!areaData;
+                  const hasLocations = areaData?.locations.size > 0;
+                  return (
                     <Chip
-                      key={areaData.area}
+                      key={areaName}
                       label={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <span>{areaData.area}</span>
-                          {areaData.locations.size > 0 && (
+                          <span>{areaName}</span>
+                          {hasLocations && (
                             <Box
                               component="span"
                               sx={{
@@ -250,27 +254,33 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                         </Box>
                       }
                       onClick={() => {
-                        // Expand the accordion
-                        setExpandedAreas((prev) => {
-                          const next = new Set(prev);
-                          next.add(areaData.area);
-                          return next;
-                        });
-                        // Scroll to the area
-                        setTimeout(() => {
-                          const element = document.getElementById(`area-${areaData.area}`);
-                          if (element) {
-                            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                          }
-                        }, 100);
+                        if (hasData) {
+                          // Expand the accordion
+                          setExpandedAreas((prev) => {
+                            const next = new Set(prev);
+                            next.add(areaName);
+                            return next;
+                          });
+                          // Scroll to the area
+                          setTimeout(() => {
+                            const element = document.getElementById(`area-${areaName}`);
+                            if (element) {
+                              element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                          }, 100);
+                        }
                       }}
-                      variant={areaData.locations.size > 0 ? 'filled' : 'outlined'}
-                      color={areaData.locations.size > 0 ? 'primary' : 'default'}
-                      sx={{ cursor: 'pointer' }}
+                      variant={hasLocations ? 'filled' : 'outlined'}
+                      color={hasLocations ? 'primary' : 'default'}
+                      sx={{
+                        cursor: hasData ? 'pointer' : 'default',
+                        opacity: hasData ? 1 : 0.5,
+                      }}
+                      disabled={!hasData}
                     />
-                  ))}
-              </Box>
-            )}
+                  );
+                })}
+            </Box>
             {areas.size === 0 && !isLoadingAreas && (
               <Alert severity="info">No areas discovered yet. Send GET AREAS to discover areas.</Alert>
             )}

@@ -294,16 +294,18 @@ function App() {
 
         if (parsed.type === 'area' && parsed.data) {
           const areaInfo = parsed.data as AreaInfo;
+          // Area names come in uppercase format (e.g., "FLOOR11")
+          const areaName = areaInfo.area.toUpperCase();
           // Add to Dashboard areas set
           setAreas((prev) => {
             const next = new Set(prev);
-            next.add(areaInfo.area);
+            next.add(areaName);
             return next;
           });
           // Update CommandCenter areas data
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
-            const existingArea = next.get(areaInfo.area);
+            const existingArea = next.get(areaName);
 
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map<string, string>();
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
@@ -315,8 +317,8 @@ function App() {
               newLocations.set(areaInfo.location, areaInfo.probeId);
             }
 
-            next.set(areaInfo.area, {
-              area: areaInfo.area,
+            next.set(areaName, {
+              area: areaName,
               locations: newLocations,
               thresholds: newThresholds,
               stats: newStats,
@@ -326,9 +328,10 @@ function App() {
           });
         } else if (parsed.type === 'threshold' && parsed.data) {
           const thresholdInfo = parsed.data as ThresholdInfo;
+          const areaName = thresholdInfo.area.toUpperCase();
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
-            const existingArea = next.get(thresholdInfo.area);
+            const existingArea = next.get(areaName);
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
             const newStats = existingArea ? new Map(existingArea.stats) : new Map();
@@ -338,17 +341,17 @@ function App() {
             const normalizedMetric =
               upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : thresholdInfo.metric;
 
-            newThresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric });
+            newThresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric, area: areaName });
 
             if (!existingArea) {
-              next.set(thresholdInfo.area, {
-                area: thresholdInfo.area,
+              next.set(areaName, {
+                area: areaName,
                 locations: newLocations,
                 thresholds: newThresholds,
                 stats: newStats,
               });
             } else {
-              next.set(thresholdInfo.area, {
+              next.set(areaName, {
                 ...existingArea,
                 thresholds: newThresholds,
               });
@@ -358,9 +361,10 @@ function App() {
           });
         } else if (parsed.type === 'stat' && parsed.data) {
           const statInfo = parsed.data as StatInfo;
+          const areaName = statInfo.area.toUpperCase();
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
-            const existingArea = next.get(statInfo.area);
+            const existingArea = next.get(areaName);
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
             const newStats = existingArea ? new Map(existingArea.stats) : new Map();
@@ -370,17 +374,17 @@ function App() {
             const normalizedMetric =
               upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : statInfo.metric;
 
-            newStats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric });
+            newStats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric, area: areaName });
 
             if (!existingArea) {
-              next.set(statInfo.area, {
-                area: statInfo.area,
+              next.set(areaName, {
+                area: areaName,
                 locations: newLocations,
                 thresholds: newThresholds,
                 stats: newStats,
               });
             } else {
-              next.set(statInfo.area, {
+              next.set(areaName, {
                 ...existingArea,
                 stats: newStats,
               });
