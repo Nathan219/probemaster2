@@ -52,13 +52,16 @@ interface CommandCenterProps {
   setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
   setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
   areasList: Set<string>;
+  getAreasTimestamp: number | null;
 }
 
-export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef, onCommandLogRef, areas, setAreas, sendCommand, probes, locations, setProbes, setLocations, areasList }: CommandCenterProps) {
+export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef, onCommandLogRef, areas, setAreas, sendCommand, probes, locations, setProbes, setLocations, areasList, getAreasTimestamp }: CommandCenterProps) {
   const [commandInput, setCommandInput] = useState('');
   const [commandLog, setCommandLog] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
+  
+  // Calculate loading state: loading if timestamp exists and we have less than 7 areas
+  const isLoadingAreas = getAreasTimestamp !== null && areas.size < 7;
 
   const onLine = useCallback(
     async (line: string) => {
@@ -205,6 +208,23 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
             <Typography variant="h6" sx={{ mb: 2 }}>
               Areas Configuration
             </Typography>
+            {isLoadingAreas && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CircularProgress size={20} />
+                  <Box>
+                    <Typography variant="body2">
+                      Loading areas... ({areas.size}/7)
+                    </Typography>
+                    {getAreasTimestamp && (
+                      <Typography variant="caption" color="text.secondary">
+                        Request sent at {new Date(getAreasTimestamp).toLocaleTimeString()}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              </Alert>
+            )}
             {areas.size > 0 && (
               <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {Array.from(areas.values())
@@ -251,12 +271,7 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                   ))}
               </Box>
             )}
-            {loading && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-                <CircularProgress />
-              </Box>
-            )}
-            {areas.size === 0 && !loading && (
+            {areas.size === 0 && !isLoadingAreas && (
               <Alert severity="info">No areas discovered yet. Send GET AREAS to discover areas.</Alert>
             )}
             {Array.from(areas.values()).map((areaData) => (

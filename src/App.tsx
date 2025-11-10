@@ -46,6 +46,9 @@ function App() {
   // Command Center areas data (shared between tabs)
   const [commandCenterAreas, setCommandCenterAreas] = useState<Map<string, AreaData>>(new Map());
 
+  // GET AREAS loading state
+  const [getAreasTimestamp, setGetAreasTimestamp] = useState<number | null>(null);
+
   // Filters
   const [metricVisibility, setMetricVisibility] = useState({ CO2: true, Temp: true, Hum: true, Sound: true });
   const [activeAreas, setActiveAreas] = useState<Set<string>>(new Set(['All']));
@@ -92,6 +95,15 @@ function App() {
     setSerialLog((prev) => (prev + `[ROUTE USB->UART1] ${cmd}\n`).slice(-20000));
     // Log to CommandCenter's command log if callback is set
     commandLogCallbackRef.current?.(`[TX] ${cmd}`);
+
+    // Track GET AREAS command
+    if (cmd.trim().toUpperCase() === 'GET AREAS') {
+      setGetAreasTimestamp(Date.now());
+      // Clear existing areas to start fresh
+      setCommandCenterAreas(new Map());
+      setAreas(new Set());
+    }
+
     try {
       // Get or reuse writer
       if (!writerRef.current) {
@@ -257,6 +269,13 @@ function App() {
 
   const commandResponseCallbackRef = useRef<((line: string) => void) | null>(null);
   const commandLogCallbackRef = useRef<((line: string) => void) | null>(null);
+
+  // Clear loading state when 7 areas are received
+  useEffect(() => {
+    if (commandCenterAreas.size >= 7 && getAreasTimestamp !== null) {
+      setGetAreasTimestamp(null);
+    }
+  }, [commandCenterAreas.size, getAreasTimestamp]);
 
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
@@ -466,6 +485,7 @@ function App() {
       alert(`Failed to connect to serial port: ${errorMessage}`);
     }
   }
+
   async function handleDisconnect() {
     setStatus('Disconnecting...');
     try {
@@ -848,6 +868,7 @@ function App() {
             setProbes={setProbes}
             setLocations={setLocations}
             areasList={areas}
+            getAreasTimestamp={getAreasTimestamp}
           />
         )}
       </Container>
