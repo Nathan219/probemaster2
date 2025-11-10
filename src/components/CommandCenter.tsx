@@ -134,6 +134,7 @@ export default function CommandCenter({
               setProbes={setProbes}
               sendCommand={sendCommand}
               connected={connected}
+              setCommandCenterAreas={setAreas}
             />
             <ProbesPanel
               probes={probes}

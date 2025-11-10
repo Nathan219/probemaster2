@@ -15,12 +15,14 @@ export function UnassignProbesPanel({
   setProbes,
   sendCommand,
   connected,
+  setCommandCenterAreas,
 }: {
   probes: Record<string, Probe>;
   locations: Record<string, Location>;
   setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
   sendCommand: (cmd: string) => Promise<void>;
   connected: boolean;
+  setCommandCenterAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
 }) {
   const handleUnassign = async (probeId: string) => {
     const confirmed = window.confirm(`Are you sure you want to unassign probe ${probeId}?`);
@@ -29,6 +31,29 @@ export function UnassignProbesPanel({
     if (connected) {
       await sendCommand(`REMOVE PROBE ${probeId}`);
     }
+
+    // Remove probe from all areas in commandCenterAreas
+    setCommandCenterAreas((prev) => {
+      const next = new Map(prev);
+      for (const [areaName, areaData] of next.entries()) {
+        const locations = new Map(areaData.locations);
+        let found = false;
+        for (const [locName, locProbeId] of locations.entries()) {
+          if (locProbeId === probeId) {
+            locations.delete(locName);
+            found = true;
+            break;
+          }
+        }
+        if (found) {
+          next.set(areaName, {
+            ...areaData,
+            locations,
+          });
+        }
+      }
+      return next;
+    });
 
     // Update probe to remove assignment
     setProbes((prev: any) => {
