@@ -53,6 +53,8 @@ interface CommandCenterProps {
   setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
   areasList: Set<string>;
   getAreasTimestamp: number | null;
+  clearSerialLog: () => void;
+  onProbeAssignmentRef: React.MutableRefObject<((probeId: string, area: string, location: string) => void) | null>;
 }
 
 export default function CommandCenter({
@@ -71,6 +73,8 @@ export default function CommandCenter({
   setLocations,
   areasList,
   getAreasTimestamp,
+  clearSerialLog,
+  onProbeAssignmentRef,
 }: CommandCenterProps) {
   const [commandInput, setCommandInput] = useState('');
   const [commandLog, setCommandLog] = useState<string[]>([]);
@@ -139,6 +143,8 @@ export default function CommandCenter({
               areas={areasList}
               sendCommand={sendCommand}
               connected={connected}
+              onProbeAssignmentRef={onProbeAssignmentRef}
+              setCommandCenterAreas={setAreas}
             />
             <Paper sx={{ p: 2 }} variant="outlined">
               <Typography variant="h6" sx={{ mb: 2 }}>
@@ -430,7 +436,7 @@ export default function CommandCenter({
         </Grid>
       </Grid>
 
-      <SerialLog log={serialLog} maxHeight={300} />
+      <SerialLog log={serialLog} maxHeight={300} onClear={clearSerialLog} />
     </Container>
   );
 }

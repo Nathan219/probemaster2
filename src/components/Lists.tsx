@@ -5,7 +5,9 @@ import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
+import CircularProgress from '@mui/material/CircularProgress';
 import { Probe, Location, Sample } from '../utils/types';
+import { AreaData } from './CommandCenter';
 
 export function UnassignProbesPanel({
   probes,
@@ -84,6 +86,8 @@ export function ProbesPanel({
   areas,
   sendCommand,
   connected,
+  onProbeAssignmentRef,
+  setCommandCenterAreas,
 }: {
   probes: Record<string, Probe>;
   locations: Record<string, Location>;
@@ -92,11 +96,17 @@ export function ProbesPanel({
   areas: Set<string>;
   sendCommand: (cmd: string) => Promise<void>;
   connected: boolean;
+  onProbeAssignmentRef: React.MutableRefObject<((probeId: string, area: string, location: string) => void) | null>;
+  setCommandCenterAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
 }) {
   // Local state to track area and location per probe
   const [probeAssignments, setProbeAssignments] = React.useState<Record<string, { area: string; location: string }>>(
     {}
   );
+  // Track loading state for each probe assignment
+  const [loadingProbes, setLoadingProbes] = React.useState<Set<string>>(new Set());
+  // Track pending assignments to avoid stale closures
+  const pendingAssignmentsRef = React.useRef<Map<string, { area: string; location: string }>>(new Map());
 
   // Initialize from existing locations
   React.useEffect(() => {
@@ -124,37 +134,113 @@ export function ProbesPanel({
     }));
   };
 
+  // Set up callback to handle probe assignment success
+  React.useEffect(() => {
+    const handleProbeAssignment = (probeId: string, area: string, location: string) => {
+      // Only process if this probe is in pending assignments
+      if (!pendingAssignmentsRef.current.has(probeId)) return;
+
+      // Remove probe from all old areas in commandCenterAreas
+      setCommandCenterAreas((prev) => {
+        const next = new Map(prev);
+        for (const [areaName, areaData] of next.entries()) {
+          const locations = new Map(areaData.locations);
+          let found = false;
+          for (const [locName, locProbeId] of locations.entries()) {
+            if (locProbeId === probeId) {
+              locations.delete(locName);
+              found = true;
+              break;
+            }
+          }
+          if (found) {
+            next.set(areaName, {
+              ...areaData,
+              locations,
+            });
+          }
+        }
+        return next;
+      });
+
+      // Find or create location
+      let locationId: string | null = null;
+      const existingLocation = Object.values(locations).find((loc: any) => loc.name === location && loc.area === area);
+      if (existingLocation) {
+        locationId = existingLocation.id;
+      } else {
+        // Create new location
+        const newId = Math.random().toString(36).slice(2, 10);
+        const newLocation: Location = { id: newId, name: location, area: area };
+        setLocations((prev: any) => ({ ...prev, [newId]: newLocation }));
+        locationId = newId;
+      }
+
+      // Update probe
+      setProbes((prev: any) => {
+        const updatedProbes = { ...prev, [probeId]: { ...prev[probeId], locationId } };
+        return updatedProbes;
+      });
+
+      // Add probe to new area in commandCenterAreas
+      const areaName = area.toUpperCase();
+      setCommandCenterAreas((prev) => {
+        const next = new Map(prev);
+        const existingArea = next.get(areaName);
+        const newLocations = existingArea ? new Map(existingArea.locations) : new Map<string, string>();
+        newLocations.set(location, probeId);
+        next.set(areaName, {
+          area: areaName,
+          locations: newLocations,
+          thresholds: existingArea?.thresholds || new Map(),
+          stats: existingArea?.stats || new Map(),
+        });
+        return next;
+      });
+
+      // Update probeAssignments to reflect the new assignment
+      setProbeAssignments((prev) => ({
+        ...prev,
+        [probeId]: { area, location },
+      }));
+
+      // Remove from pending and loading state
+      pendingAssignmentsRef.current.delete(probeId);
+      setLoadingProbes((prev) => {
+        const next = new Set(prev);
+        next.delete(probeId);
+        return next;
+      });
+    };
+
+    onProbeAssignmentRef.current = handleProbeAssignment;
+    return () => {
+      onProbeAssignmentRef.current = null;
+    };
+  }, [locations, setProbes, setLocations, setCommandCenterAreas, onProbeAssignmentRef]);
+
   const handleAssign = async (probeId: string) => {
     const assignment = probeAssignments[probeId];
     if (!assignment || !assignment.area || !assignment.location) return;
+
+    // Set loading state and track pending assignment
+    setLoadingProbes((prev) => new Set(prev).add(probeId));
+    pendingAssignmentsRef.current.set(probeId, { area: assignment.area, location: assignment.location });
 
     if (connected) {
       // Based on SensorHandler.cpp, sensor UART expects: probeId: SET PROBE area location
       // The device routes SET PROBE commands to sensor UART (UART2), so we need to format it
       // as if it came from a probe: probeId: SET PROBE area location
       await sendCommand(`SET PROBES ${probeId} ${assignment.area} ${assignment.location}`);
-    }
-
-    // Find or create location
-    let locationId: string | null = null;
-    const existingLocation = Object.values(locations).find(
-      (loc: any) => loc.name === assignment.location && loc.area === assignment.area
-    );
-    if (existingLocation) {
-      locationId = existingLocation.id;
     } else {
-      // Create new location
-      const newId = Math.random().toString(36).slice(2, 10);
-      const newLocation: Location = { id: newId, name: assignment.location, area: assignment.area };
-      setLocations((prev: any) => ({ ...prev, [newId]: newLocation }));
-      locationId = newId;
+      // If not connected, remove from loading state immediately
+      pendingAssignmentsRef.current.delete(probeId);
+      setLoadingProbes((prev) => {
+        const next = new Set(prev);
+        next.delete(probeId);
+        return next;
+      });
     }
-
-    // Update probe
-    setProbes((prev: any) => {
-      const updatedProbes = { ...prev, [probeId]: { ...prev[probeId], locationId } };
-      return updatedProbes;
-    });
   };
 
   const areaList = Array.from(areas).sort();
@@ -198,8 +284,9 @@ export function ProbesPanel({
                 variant="contained"
                 size="small"
                 onClick={() => handleAssign(probe.id)}
-                disabled={!canAssign || !connected}
+                disabled={!canAssign || !connected || loadingProbes.has(probe.id)}
                 sx={{ minWidth: 80 }}
+                startIcon={loadingProbes.has(probe.id) ? <CircularProgress size={16} /> : null}
               >
                 Assign
               </Button>

@@ -271,6 +271,7 @@ function App() {
 
   const commandResponseCallbackRef = useRef<((line: string) => void) | null>(null);
   const commandLogCallbackRef = useRef<((line: string) => void) | null>(null);
+  const probeAssignmentCallbackRef = useRef<((probeId: string, area: string, location: string) => void) | null>(null);
 
   // Clear loading state when 7 areas are received
   useEffect(() => {
@@ -281,6 +282,15 @@ function App() {
 
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
+
+    // Check for PROBE ACCEPTED message: [UART1] WEBd: PROBE e6e0 FLOOR12 ROTUNDA ACCEPTED
+    const probeMatch = line.match(/PROBE\s+(\S+)\s+(\S+)\s+(\S+)\s+ACCEPTED/i);
+    if (probeMatch) {
+      const probeId = probeMatch[1];
+      const area = probeMatch[2];
+      const location = probeMatch[3];
+      probeAssignmentCallbackRef.current?.(probeId, area, location);
+    }
 
     // Check if this is a command response and route to CommandCenter
     if (
@@ -741,6 +751,8 @@ function App() {
             setLocations={setLocations}
             areasList={areas}
             getAreasTimestamp={getAreasTimestamp}
+            clearSerialLog={() => setSerialLog('')}
+            onProbeAssignmentRef={probeAssignmentCallbackRef}
           />
         )}
 
