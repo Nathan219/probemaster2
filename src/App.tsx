@@ -13,7 +13,6 @@ import { parseLine, toCSV } from './utils/parsing';
 import { parseAreaResponse, parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
-import { createSimSetup, makeSimTickers } from './sim';
 
 function App() {
   const [dark, setDark] = useState<boolean>(() => {
@@ -35,7 +34,6 @@ function App() {
   const [baud, setBaud] = useState(115200);
   const [status, setStatus] = useState('Idle');
   const [serialLog, setSerialLog] = useState('');
-  const [simTimer, setSimTimer] = useState<number | null>(null);
 
   // Data
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -474,10 +472,6 @@ function App() {
       setTimeout(() => {
         sendCommand('GET AREAS');
       }, 300);
-      if (simTimer) {
-        window.clearInterval(simTimer);
-        setSimTimer(null);
-      }
     } catch (e) {
       console.error(e);
       setStatus('Failed to connect');
@@ -561,42 +555,6 @@ function App() {
       console.error('Failed to start reading:', e);
       alert('Failed to start reading: ' + e);
       setStatus('Failed to start reading');
-    }
-  }
-
-  // SIM
-  function startSim() {
-    const { locations: locs, probes: simProbes } = createSimSetup();
-    if (Object.keys(locations).length === 0) {
-      setLocations((prev) => ({ ...prev, ...locs }));
-      Object.values(locs).forEach((l) => idbPut('locations', l));
-    }
-    const toAdd: Record<string, Probe> = {};
-    for (const id of Object.keys(simProbes)) {
-      if (!probes[id]) {
-        toAdd[id] = { id, locationId: simProbes[id].locationId };
-        idbPut('probes', toAdd[id]);
-      }
-    }
-    if (Object.keys(toAdd).length) setProbes((prev) => ({ ...prev, ...toAdd }));
-
-    const ticker = makeSimTickers(Object.keys({ ...probes, ...toAdd }));
-    const timer = window.setInterval(
-      async () => {
-        const batch = ticker();
-        pending.current.push(...batch);
-        await idbBulkAddSamples(batch);
-      },
-      2000 + Math.random() * 1000
-    );
-    setSimTimer(timer as unknown as number);
-    setStatus('Simulating data...');
-  }
-  function stopSim() {
-    if (simTimer) {
-      window.clearInterval(simTimer);
-      setSimTimer(null);
-      setStatus('Idle');
     }
   }
 
@@ -781,9 +739,6 @@ function App() {
         onBackupClear={handleBackupClear}
         dark={dark}
         setDark={setDark}
-        onStartSim={startSim}
-        onStopSim={stopSim}
-        simRunning={!!simTimer}
         onGetAreas={() => sendCommand('GET AREAS')}
       />
 

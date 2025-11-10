@@ -22,9 +22,6 @@ export default function Header(p: any) {
     onBackupClear,
     dark,
     setDark,
-    onStartSim,
-    onStopSim,
-    simRunning,
     onGetAreas,
   } = p;
   return (
