@@ -12,9 +12,11 @@ import { idbPut } from '../db/idb';
 export function LocationsPanel({
   locations,
   setLocations,
+  areas,
 }: {
   locations: Record<string, Location>;
   setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
+  areas: Set<string>;
 }) {
   const [name, setName] = React.useState('');
   const [area, setArea] = React.useState('');
@@ -29,6 +31,8 @@ export function LocationsPanel({
     setArea('');
   };
 
+  const areaList = Array.from(areas).sort();
+
   return (
     <Paper sx={{ p: 2 }} variant="outlined">
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -36,7 +40,20 @@ export function LocationsPanel({
       </Typography>
       <Stack direction="row" spacing={1}>
         <TextField size="small" label="Location" value={name} onChange={(e) => setName(e.target.value)} />
-        <TextField size="small" label="Area" value={area} onChange={(e) => setArea(e.target.value)} />
+        <TextField
+          select
+          size="small"
+          label="Area"
+          value={area}
+          onChange={(e) => setArea(e.target.value)}
+          sx={{ minWidth: 120 }}
+        >
+          {areaList.map((areaName) => (
+            <MenuItem key={areaName} value={areaName}>
+              {areaName}
+            </MenuItem>
+          ))}
+        </TextField>
         <Button variant="contained" onClick={add}>
           Add
         </Button>

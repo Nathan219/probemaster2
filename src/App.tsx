@@ -86,6 +86,7 @@ function App() {
   async function sendCommand(cmd: string) {
     if (!port || !port.writable) {
       console.error('Port not writable');
+      alert('Port not writable');
       return;
     }
     const command = cmd.trim() + '\n';
@@ -536,6 +537,7 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to start reading:', e);
+      alert('Failed to start reading: ' + e);
       setStatus('Failed to start reading');
     }
   }
@@ -828,7 +830,7 @@ function App() {
                     <ProbesPanel probes={allProbes} locations={dashboardLocations} setProbes={setProbes} />
                   </Grid>
                   <Grid item xs={12}>
-                    <LocationsPanel locations={dashboardLocations} setLocations={setLocations} />
+                    <LocationsPanel locations={dashboardLocations} setLocations={setLocations} areas={areas} />
                   </Grid>
                 </Grid>
               </Grid>
