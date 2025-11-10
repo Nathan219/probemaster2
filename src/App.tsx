@@ -740,6 +740,7 @@ function App() {
           <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
             <Tab label="Dashboard" />
             <Tab label="Command Center" />
+            <Tab label="Spy Mode" />
           </Tabs>
         </Box>
 
@@ -819,6 +820,29 @@ function App() {
             areasList={areas}
             getAreasTimestamp={getAreasTimestamp}
           />
+        )}
+
+        {activeTab === 2 && (
+          <Grid container spacing={2}>
+            <IndividualCharts
+              samples={filteredSamples}
+              probes={allProbes}
+              locations={dashboardLocations}
+              activeProbes={activeProbes}
+              metricVisibility={metricVisibility}
+              gridLayout={true}
+            />
+            <SummaryCharts
+              samples={filteredSamples}
+              probes={allProbes}
+              locations={dashboardLocations}
+              activeAreas={activeAreas}
+              metricVisibility={metricVisibility}
+              aggType={aggType}
+              showBand={showBand}
+              gridLayout={true}
+            />
+          </Grid>
         )}
       </Container>
     </ThemeProvider>
