@@ -10,20 +10,7 @@ import Brightness4Icon from '@mui/icons-material/DarkMode';
 import Brightness7Icon from '@mui/icons-material/LightMode';
 
 export default function Header(p: any) {
-  const {
-    status,
-    connected,
-    baud,
-    setBaud,
-    onConnect,
-    onDisconnect,
-    onExport,
-    onImport,
-    onBackupClear,
-    dark,
-    setDark,
-    onGetAreas,
-  } = p;
+  const { status, connected, baud, setBaud, onConnect, onDisconnect, onBackupClear, dark, setDark, onGetAreas } = p;
   return (
     <AppBar position="sticky" color="default" elevation={1}>
       <Toolbar sx={{ gap: 2, justifyContent: 'space-between' }}>

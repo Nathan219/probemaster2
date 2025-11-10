@@ -10,7 +10,7 @@ import SerialLog from './components/SerialLog';
 import { makeTheme } from './theme';
 import { Sample, Probe, Location } from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
-import { parseAreaResponse, parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
+import { parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
 
@@ -19,6 +19,7 @@ function App() {
     const s = localStorage.getItem('pm_dark');
     return s ? s === '1' : true;
   });
+
   useEffect(() => {
     localStorage.setItem('pm_dark', dark ? '1' : '0');
   }, [dark]);
@@ -558,16 +559,6 @@ function App() {
     }
   }
 
-  function handleExport() {
-    const csv = toCSV(samples);
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `samples-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   function csvSafe(s: string) {
     return /,|"|\n/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
@@ -689,33 +680,6 @@ function App() {
     });
   }, [allProbes, dashboardLocations]);
 
-  function handleImport(file: File) {
-    if (file.name.endsWith('.zip')) return importZip(file);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const text = String(reader.result || '');
-      const rows = text.trim().split(/\r?\n/);
-      rows.shift();
-      const imported: Sample[] = [];
-      for (const line of rows) {
-        if (!line.trim()) continue;
-        const [ts, , probeId, co2, temp, hum, sound] = line.split(',');
-        imported.push({
-          ts: Number(ts),
-          probeId,
-          co2: Number(co2),
-          temp: Number(temp),
-          hum: Number(hum),
-          sound: Number(sound),
-        });
-      }
-      setSamples((prev) => [...prev, ...imported].sort((a, b) => a.ts - b.ts));
-      await idbBulkAddSamples(imported);
-      alert(`Imported ${imported.length} rows from CSV.`);
-    };
-    reader.readAsText(file);
-  }
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -726,16 +690,6 @@ function App() {
         setBaud={setBaud}
         onConnect={handleConnect}
         onDisconnect={handleDisconnect}
-        onExport={() => {
-          const csv = toCSV(samples);
-          const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'samples.csv';
-          a.click();
-          URL.revokeObjectURL(url);
-        }}
-        onImport={handleImport}
         onBackupClear={handleBackupClear}
         dark={dark}
         setDark={setDark}
