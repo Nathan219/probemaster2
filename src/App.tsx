@@ -7,6 +7,7 @@ import SummaryCharts from './components/SummaryCharts';
 import { LatestReadings } from './components/Lists';
 import CommandCenter, { AreaData } from './components/CommandCenter';
 import SerialLog from './components/SerialLog';
+import PixelVisualization from './components/PixelVisualization';
 import { makeTheme } from './theme';
 import { Sample, Probe, Location } from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
@@ -47,6 +48,9 @@ function App() {
 
   // GET AREAS loading state
   const [getAreasTimestamp, setGetAreasTimestamp] = useState<number | null>(null);
+
+  // Pixel data (area -> pixel count 0-6)
+  const [pixelData, setPixelData] = useState<Record<string, number>>({});
 
   // Filters
   const [metricVisibility, setMetricVisibility] = useState({ CO2: true, Temp: true, Hum: true, Sound: true });
@@ -392,6 +396,38 @@ function App() {
 
             return next;
           });
+        }
+      }
+    }
+
+    // Parse pixel data from LED diagnostic messages
+    // Format: [LEDS] Pixels: FLOOR11:0, FLOOR12:0, FLOOR15:0, FLOOR16:0, FLOOR17:0, POOL:0, TEAROOM:0
+    if (line.includes('[LEDS]') && line.includes('Pixels:')) {
+      const pixelsMatch = line.match(/\[LEDS\]\s*Pixels:\s*(.+)/i);
+      if (pixelsMatch) {
+        const pixelsStr = pixelsMatch[1].trim();
+        const newPixelData: Record<string, number> = {};
+
+        // Parse area:value pairs
+        const pairs = pixelsStr.split(',').map((p) => p.trim());
+        for (const pair of pairs) {
+          const [area, valueStr] = pair.split(':').map((s) => s.trim());
+          if (area && valueStr !== undefined) {
+            const value = parseFloat(valueStr);
+            if (!isNaN(value)) {
+              // Normalize area name (FLOOR11 -> FLOOR11, FLOOR 11 -> FLOOR11)
+              let normalizedArea = area.toUpperCase();
+              const floorMatch = normalizedArea.match(/FLOOR\s*(\d+)/);
+              if (floorMatch) {
+                normalizedArea = `FLOOR${floorMatch[1]}`;
+              }
+              newPixelData[normalizedArea] = Math.max(0, Math.min(6, Math.round(value)));
+            }
+          }
+        }
+
+        if (Object.keys(newPixelData).length > 0) {
+          setPixelData((prev) => ({ ...prev, ...newPixelData }));
         }
       }
     }
@@ -757,6 +793,7 @@ function App() {
               </Grid>
 
               <Grid item xs={12} md={4}>
+                <PixelVisualization pixelData={pixelData} />
                 <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
               </Grid>
             </Grid>
