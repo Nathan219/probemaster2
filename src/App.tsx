@@ -539,8 +539,34 @@ function App() {
         startReading(p);
       }, 100);
       // Call GET AREAS after connection is established
-      setTimeout(() => {
-        sendCommand('GET AREAS');
+      setTimeout(async () => {
+        // Use the port directly since state might not be updated yet
+        if (p && p.writable) {
+          try {
+            const command = 'GET AREAS\n';
+            setSerialLog((prev) => (prev + `[ROUTE USB->UART1] GET AREAS\n`).slice(-20000));
+            commandLogCallbackRef.current?.('[TX] GET AREAS');
+            setGetAreasTimestamp(Date.now());
+            setCommandCenterAreas(new Map());
+            setAreas(new Set());
+            if (!writerRef.current) {
+              writerRef.current = p.writable.getWriter();
+            }
+            const writer = writerRef.current;
+            if (writer) {
+              const encoder = new TextEncoder();
+              await writer.write(encoder.encode(command));
+            }
+          } catch (e) {
+            console.error('Send GET AREAS error', e);
+            if (writerRef.current) {
+              try {
+                writerRef.current.releaseLock();
+              } catch {}
+              writerRef.current = null;
+            }
+          }
+        }
       }, 300);
     } catch (e) {
       console.error(e);
