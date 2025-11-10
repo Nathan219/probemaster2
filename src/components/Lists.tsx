@@ -7,7 +7,6 @@ import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
 import CircularProgress from '@mui/material/CircularProgress';
 import { Probe, Location, Sample } from '../utils/types';
-import { AreaData } from './CommandCenter';
 
 export function UnassignProbesPanel({
   probes,
@@ -15,14 +14,12 @@ export function UnassignProbesPanel({
   setProbes,
   sendCommand,
   connected,
-  setCommandCenterAreas,
 }: {
   probes: Record<string, Probe>;
   locations: Record<string, Location>;
   setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
   sendCommand: (cmd: string) => Promise<void>;
   connected: boolean;
-  setCommandCenterAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
 }) {
   const handleUnassign = async (probeId: string) => {
     const confirmed = window.confirm(`Are you sure you want to unassign probe ${probeId}?`);
@@ -30,30 +27,9 @@ export function UnassignProbesPanel({
 
     if (connected) {
       await sendCommand(`REMOVE PROBE ${probeId}`);
+      // Refresh areas data from GET AREAS response
+      await sendCommand('GET AREAS');
     }
-
-    // Remove probe from all areas in commandCenterAreas
-    setCommandCenterAreas((prev) => {
-      const next = new Map(prev);
-      for (const [areaName, areaData] of next.entries()) {
-        const locations = new Map(areaData.locations);
-        let found = false;
-        for (const [locName, locProbeId] of locations.entries()) {
-          if (locProbeId === probeId) {
-            locations.delete(locName);
-            found = true;
-            break;
-          }
-        }
-        if (found) {
-          next.set(areaName, {
-            ...areaData,
-            locations,
-          });
-        }
-      }
-      return next;
-    });
 
     // Update probe to remove assignment
     setProbes((prev: any) => {
@@ -112,7 +88,6 @@ export function ProbesPanel({
   sendCommand,
   connected,
   onProbeAssignmentRef,
-  setCommandCenterAreas,
 }: {
   probes: Record<string, Probe>;
   locations: Record<string, Location>;
@@ -122,7 +97,6 @@ export function ProbesPanel({
   sendCommand: (cmd: string) => Promise<void>;
   connected: boolean;
   onProbeAssignmentRef: React.MutableRefObject<((probeId: string, area: string, location: string) => void) | null>;
-  setCommandCenterAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
 }) {
   // Local state to track area and location per probe
   const [probeAssignments, setProbeAssignments] = React.useState<Record<string, { area: string; location: string }>>(
@@ -165,29 +139,6 @@ export function ProbesPanel({
       // Only process if this probe is in pending assignments
       if (!pendingAssignmentsRef.current.has(probeId)) return;
 
-      // Remove probe from all old areas in commandCenterAreas
-      setCommandCenterAreas((prev) => {
-        const next = new Map(prev);
-        for (const [areaName, areaData] of next.entries()) {
-          const locations = new Map(areaData.locations);
-          let found = false;
-          for (const [locName, locProbeId] of locations.entries()) {
-            if (locProbeId === probeId) {
-              locations.delete(locName);
-              found = true;
-              break;
-            }
-          }
-          if (found) {
-            next.set(areaName, {
-              ...areaData,
-              locations,
-            });
-          }
-        }
-        return next;
-      });
-
       // Find or create location
       let locationId: string | null = null;
       const existingLocation = Object.values(locations).find((loc: any) => loc.name === location && loc.area === area);
@@ -207,21 +158,10 @@ export function ProbesPanel({
         return updatedProbes;
       });
 
-      // Add probe to new area in commandCenterAreas
-      const areaName = area.toUpperCase();
-      setCommandCenterAreas((prev) => {
-        const next = new Map(prev);
-        const existingArea = next.get(areaName);
-        const newLocations = existingArea ? new Map(existingArea.locations) : new Map<string, string>();
-        newLocations.set(location, probeId);
-        next.set(areaName, {
-          area: areaName,
-          locations: newLocations,
-          thresholds: existingArea?.thresholds || new Map(),
-          stats: existingArea?.stats || new Map(),
-        });
-        return next;
-      });
+      // Refresh areas data from GET AREAS response
+      if (connected) {
+        sendCommand('GET AREAS');
+      }
 
       // Update probeAssignments to reflect the new assignment
       setProbeAssignments((prev) => ({
@@ -242,7 +182,7 @@ export function ProbesPanel({
     return () => {
       onProbeAssignmentRef.current = null;
     };
-  }, [locations, setProbes, setLocations, setCommandCenterAreas, onProbeAssignmentRef]);
+  }, [locations, setProbes, setLocations, onProbeAssignmentRef, connected, sendCommand]);
 
   const handleAssign = async (probeId: string) => {
     const assignment = probeAssignments[probeId];

@@ -789,7 +789,6 @@ function App() {
             onCommandResponseRef={commandResponseCallbackRef}
             onCommandLogRef={commandLogCallbackRef}
             areas={commandCenterAreas}
-            setAreas={setCommandCenterAreas}
             sendCommand={sendCommand}
             probes={allProbes}
             locations={dashboardLocations}

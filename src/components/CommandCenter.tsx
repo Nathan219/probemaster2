@@ -45,7 +45,6 @@ interface CommandCenterProps {
   onCommandResponseRef: React.MutableRefObject<((line: string) => void) | null>;
   onCommandLogRef: React.MutableRefObject<((line: string) => void) | null>;
   areas: Map<string, AreaData>;
-  setAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
   sendCommand: (cmd: string) => Promise<void>;
   probes: Record<string, Probe>;
   locations: Record<string, Location>;
@@ -65,7 +64,6 @@ export default function CommandCenter({
   onCommandResponseRef,
   onCommandLogRef,
   areas,
-  setAreas,
   sendCommand,
   probes,
   locations,
@@ -134,7 +132,6 @@ export default function CommandCenter({
               setProbes={setProbes}
               sendCommand={sendCommand}
               connected={connected}
-              setCommandCenterAreas={setAreas}
             />
             <ProbesPanel
               probes={probes}
@@ -145,7 +142,6 @@ export default function CommandCenter({
               sendCommand={sendCommand}
               connected={connected}
               onProbeAssignmentRef={onProbeAssignmentRef}
-              setCommandCenterAreas={setAreas}
             />
             <Paper sx={{ p: 2 }} variant="outlined">
               <Typography variant="h6" sx={{ mb: 2 }}>
