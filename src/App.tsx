@@ -246,7 +246,6 @@ function App() {
     }
     // Also need to check if samples have probe IDs that match (with normalization)
     const normalizedActiveProbes = new Set(Array.from(activeProbes).map((id) => normalizeProbeId(id)));
-    const normalizedAllowed = new Set(Array.from(allowed).map((id) => normalizeProbeId(id)));
     return new Set(
       [...allowed].filter((id) => {
         const normalizedId = normalizeProbeId(id);
