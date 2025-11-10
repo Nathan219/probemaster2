@@ -5,67 +5,72 @@ import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
-import Divider from '@mui/material/Divider';
 import { Probe, Location, Sample } from '../utils/types';
-import { idbPut } from '../db/idb';
 
-export function LocationsPanel({
+export function UnassignProbesPanel({
+  probes,
   locations,
-  setLocations,
-  areas,
+  setProbes,
+  sendCommand,
+  connected,
 }: {
+  probes: Record<string, Probe>;
   locations: Record<string, Location>;
-  setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
-  areas: Set<string>;
+  setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
+  sendCommand: (cmd: string) => Promise<void>;
+  connected: boolean;
 }) {
-  const [name, setName] = React.useState('');
-  const [area, setArea] = React.useState('');
+  const handleUnassign = async (probeId: string) => {
+    const confirmed = window.confirm(`Are you sure you want to unassign probe ${probeId}?`);
+    if (!confirmed) return;
 
-  const add = async () => {
-    if (!name || !area) return;
-    const id = Math.random().toString(36).slice(2, 10);
-    const location: Location = { id, name, area };
-    setLocations((prev: any) => ({ ...prev, [location.id]: location }));
-    await idbPut('locations', location);
-    setName('');
-    setArea('');
+    if (connected) {
+      await sendCommand(`REMOVE PROBE ${probeId}`);
+    }
+
+    // Update probe to remove assignment
+    setProbes((prev: any) => {
+      const updatedProbes = { ...prev, [probeId]: { ...prev[probeId], locationId: null } };
+      return updatedProbes;
+    });
   };
 
-  const areaList = Array.from(areas).sort();
+  const assignedProbes = Object.values(probes).filter(
+    (probe: any) => probe.locationId !== null && probe.locationId !== undefined
+  );
+
+  if (assignedProbes.length === 0) {
+    return null;
+  }
 
   return (
     <Paper sx={{ p: 2 }} variant="outlined">
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        Locations
+        Assigned Probes
       </Typography>
-      <Stack direction="row" spacing={1}>
-        <TextField size="small" label="Location" value={name} onChange={(e) => setName(e.target.value)} />
-        <TextField
-          select
-          size="small"
-          label="Area"
-          value={area}
-          onChange={(e) => setArea(e.target.value)}
-          sx={{ minWidth: 120 }}
-        >
-          {areaList.map((areaName) => (
-            <MenuItem key={areaName} value={areaName}>
-              {areaName}
-            </MenuItem>
-          ))}
-        </TextField>
-        <Button variant="contained" onClick={add}>
-          Add
-        </Button>
-      </Stack>
-      <Divider sx={{ my: 1 }} />
-      <Stack spacing={1} maxHeight={280} sx={{ overflow: 'auto' }}>
-        {Object.values(locations).map((location: any) => (
-          <Paper key={location.id} variant="outlined" sx={{ p: 1 }}>
-            <Typography fontWeight={600}>{location.name}</Typography>
-            <Typography variant="caption">Area: {location.area}</Typography>
-          </Paper>
-        ))}
+      <Stack spacing={1} maxHeight={200} sx={{ overflow: 'auto', pt: 0.5 }}>
+        {assignedProbes.map((probe: any) => {
+          const location = probe.locationId ? locations[probe.locationId] : null;
+          const label = location ? `${location.area} / ${location.name}` : 'Unknown';
+          return (
+            <Stack key={probe.id} direction="row" spacing={1} alignItems="center">
+              <Typography sx={{ fontFamily: 'monospace', flex: 1 }}>{probe.id}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                {label}
+              </Typography>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                onClick={() => handleUnassign(probe.id)}
+                disabled={!connected}
+                sx={{ minWidth: 90 }}
+              >
+                Unassign
+              </Button>
+            </Stack>
+          );
+        })}
       </Stack>
     </Paper>
   );
@@ -75,18 +80,84 @@ export function ProbesPanel({
   probes,
   locations,
   setProbes,
+  setLocations,
+  areas,
+  sendCommand,
+  connected,
 }: {
   probes: Record<string, Probe>;
   locations: Record<string, Location>;
   setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
+  setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
+  areas: Set<string>;
+  sendCommand: (cmd: string) => Promise<void>;
+  connected: boolean;
 }) {
-  const assign = async (id: string, locationId: string | null) => {
+  // Local state to track area and location per probe
+  const [probeAssignments, setProbeAssignments] = React.useState<Record<string, { area: string; location: string }>>(
+    {}
+  );
+
+  // Initialize from existing locations
+  React.useEffect(() => {
+    const assignments: Record<string, { area: string; location: string }> = {};
+    Object.values(probes).forEach((probe: any) => {
+      if (probe.locationId && locations[probe.locationId]) {
+        const location = locations[probe.locationId];
+        assignments[probe.id] = { area: location.area, location: location.name };
+      }
+    });
+    setProbeAssignments(assignments);
+  }, [probes, locations]);
+
+  const handleAreaChange = (probeId: string, area: string) => {
+    setProbeAssignments((prev) => ({
+      ...prev,
+      [probeId]: { ...prev[probeId], area, location: prev[probeId]?.location || '' },
+    }));
+  };
+
+  const handleLocationChange = (probeId: string, location: string) => {
+    setProbeAssignments((prev) => ({
+      ...prev,
+      [probeId]: { ...prev[probeId], area: prev[probeId]?.area || '', location },
+    }));
+  };
+
+  const handleAssign = async (probeId: string) => {
+    const assignment = probeAssignments[probeId];
+    if (!assignment || !assignment.area || !assignment.location) return;
+
+    if (connected) {
+      // Based on SensorHandler.cpp, sensor UART expects: probeId: SET PROBE area location
+      // The device routes SET PROBE commands to sensor UART (UART2), so we need to format it
+      // as if it came from a probe: probeId: SET PROBE area location
+      await sendCommand(`${probeId}: SET PROBE ${assignment.area} ${assignment.location}`);
+    }
+
+    // Find or create location
+    let locationId: string | null = null;
+    const existingLocation = Object.values(locations).find(
+      (loc: any) => loc.name === assignment.location && loc.area === assignment.area
+    );
+    if (existingLocation) {
+      locationId = existingLocation.id;
+    } else {
+      // Create new location
+      const newId = Math.random().toString(36).slice(2, 10);
+      const newLocation: Location = { id: newId, name: assignment.location, area: assignment.area };
+      setLocations((prev: any) => ({ ...prev, [newId]: newLocation }));
+      locationId = newId;
+    }
+
+    // Update probe
     setProbes((prev: any) => {
-      const updatedProbes = { ...prev, [id]: { ...prev[id], locationId } };
-      idbPut('probes', updatedProbes[id]);
+      const updatedProbes = { ...prev, [probeId]: { ...prev[probeId], locationId } };
       return updatedProbes;
     });
   };
+
+  const areaList = Array.from(areas).sort();
 
   return (
     <Paper sx={{ p: 2 }} variant="outlined">
@@ -94,26 +165,47 @@ export function ProbesPanel({
         Probes
       </Typography>
       <Stack spacing={1} maxHeight={350} sx={{ overflow: 'auto', pt: 0.5 }}>
-        {Object.values(probes).map((probe: any) => (
-          <Stack key={probe.id} direction="row" spacing={1} alignItems="flex-start">
-            <Typography sx={{ fontFamily: 'monospace', pt: 1.5 }}>{probe.id}</Typography>
-            <TextField
-              select
-              size="small"
-              label="Location"
-              value={probe.locationId || ''}
-              onChange={(e) => assign(probe.id, (e.target as any).value || null)}
-              sx={{ minWidth: 220 }}
-            >
-              <MenuItem value="">Unassigned</MenuItem>
-              {Object.values(locations).map((location: any) => (
-                <MenuItem key={location.id} value={location.id}>
-                  {location.name} ({location.area})
-                </MenuItem>
-              ))}
-            </TextField>
-          </Stack>
-        ))}
+        {Object.values(probes).map((probe: any) => {
+          const assignment = probeAssignments[probe.id] || { area: '', location: '' };
+          const canAssign = assignment.area && assignment.location;
+          return (
+            <Stack key={probe.id} direction="row" spacing={1} alignItems="flex-start">
+              <Typography sx={{ fontFamily: 'monospace', pt: 1.5 }}>{probe.id}</Typography>
+              <TextField
+                select
+                size="small"
+                label="Area"
+                value={assignment.area}
+                onChange={(e) => handleAreaChange(probe.id, e.target.value)}
+                disabled={!connected}
+                sx={{ minWidth: 120 }}
+              >
+                {areaList.map((areaName) => (
+                  <MenuItem key={areaName} value={areaName}>
+                    {areaName}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                size="small"
+                label="Location"
+                value={assignment.location}
+                onChange={(e) => handleLocationChange(probe.id, e.target.value)}
+                disabled={!connected}
+                sx={{ minWidth: 120 }}
+              />
+              <Button
+                variant="contained"
+                size="small"
+                onClick={() => handleAssign(probe.id)}
+                disabled={!canAssign || !connected}
+                sx={{ minWidth: 80 }}
+              >
+                Assign
+              </Button>
+            </Stack>
+          );
+        })}
       </Stack>
     </Paper>
   );
