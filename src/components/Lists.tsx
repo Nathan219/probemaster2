@@ -132,7 +132,7 @@ export function ProbesPanel({
       // Based on SensorHandler.cpp, sensor UART expects: probeId: SET PROBE area location
       // The device routes SET PROBE commands to sensor UART (UART2), so we need to format it
       // as if it came from a probe: probeId: SET PROBE area location
-      await sendCommand(`${probeId}: SET PROBE ${assignment.area} ${assignment.location}`);
+      await sendCommand(`SET PROBES ${probeId} ${assignment.area} ${assignment.location}`);
     }
 
     // Find or create location
