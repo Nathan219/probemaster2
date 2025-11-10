@@ -4,7 +4,7 @@ import Header from './components/Header';
 import Filters from './components/Filters';
 import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
-import { ProbesPanel, LocationsPanel, LatestReadings } from './components/Lists';
+import { ProbesPanel, UnassignProbesPanel, LatestReadings } from './components/Lists';
 import CommandCenter, { AreaData } from './components/CommandCenter';
 import SerialLog from './components/SerialLog';
 import { makeTheme } from './theme';
@@ -86,7 +86,6 @@ function App() {
   async function sendCommand(cmd: string) {
     if (!port || !port.writable) {
       console.error('Port not writable');
-      alert('Port not writable');
       return;
     }
     const command = cmd.trim() + '\n';
@@ -178,7 +177,8 @@ function App() {
   }, [commandCenterAreas, dashboardLocations]);
 
   // Helper function to normalize probe ID (strip prefixes like [UART2])
-  function normalizeProbeId(probeId: string): string {
+  function normalizeProbeId(probeId: string | undefined): string {
+    if (!probeId) return '';
     // Remove prefixes like [UART2], [UART1], etc.
     const match = probeId.match(/\[.*?\]\s*(.+)$/);
     return match ? match[1].trim() : probeId.trim();
@@ -189,7 +189,9 @@ function App() {
     const merged = { ...dashboardProbes };
     // Add probes from sensor data that aren't in dashboardProbes
     Object.values(probes).forEach((p) => {
+      if (!p.id) return;
       const normalizedId = normalizeProbeId(p.id);
+      if (!normalizedId) return;
       // Use normalized ID for the merged probe
       if (!merged[normalizedId]) {
         // Try to find this probe in commandCenterAreas to get its location
@@ -827,10 +829,24 @@ function App() {
                     <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
                   </Grid>
                   <Grid item xs={12}>
-                    <ProbesPanel probes={allProbes} locations={dashboardLocations} setProbes={setProbes} />
+                    <UnassignProbesPanel
+                      probes={allProbes}
+                      locations={dashboardLocations}
+                      setProbes={setProbes}
+                      sendCommand={sendCommand}
+                      connected={!!port}
+                    />
                   </Grid>
                   <Grid item xs={12}>
-                    <LocationsPanel locations={dashboardLocations} setLocations={setLocations} areas={areas} />
+                    <ProbesPanel
+                      probes={allProbes}
+                      locations={dashboardLocations}
+                      setProbes={setProbes}
+                      setLocations={setLocations}
+                      areas={areas}
+                      sendCommand={sendCommand}
+                      connected={!!port}
+                    />
                   </Grid>
                 </Grid>
               </Grid>
