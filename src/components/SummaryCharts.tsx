@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
+import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
 import { Sample, Location, Probe } from '../utils/types';
 
@@ -53,6 +54,7 @@ export default function SummaryCharts({
   metricVisibility,
   aggType,
   showBand,
+  gridLayout = false,
 }: {
   samples: Sample[];
   probes: Record<string, Probe>;
@@ -61,6 +63,7 @@ export default function SummaryCharts({
   metricVisibility: { CO2: boolean; Temp: boolean; Hum: boolean; Sound: boolean };
   aggType: 'avg' | 'min' | 'max';
   showBand: boolean;
+  gridLayout?: boolean;
 }) {
   const areaSamples = useMemo(() => {
     const map: Record<string, Sample[]> = {};
@@ -108,89 +111,99 @@ export default function SummaryCharts({
   }
 
   const areas = Object.keys(areaSamples);
-  return (
-    <Stack spacing={2}>
-      {metrics.map(([metricKey, metric]) => (
-        <Paper key={metricKey} sx={{ p: 2 }} variant="outlined">
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            {metric.label}
-          </Typography>
-          <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="time"
-                type="number"
-                domain={['auto', 'auto']}
-                tickFormatter={(timestamp) =>
-                  new Date(timestamp as number).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                }
-              />
-              <YAxis />
-              <Tooltip labelFormatter={(timestamp) => new Date(+timestamp).toLocaleTimeString()} />
-              <Legend />
-              {areas.map((area) => {
-                const color = paletteForArea(area);
-                const data = aggregate(area, metricInfo[metricKey as keyof typeof metricInfo].key as keyof Sample);
-                const chartData = data.map((row) => ({
-                  time: row.time,
-                  value: row[aggType],
-                  min: row.min,
-                  max: row.max,
-                  range: row.max - row.min,
-                }));
-                return (
-                  <React.Fragment key={area}>
-                    {showBand && (
-                      <>
-                        <Area
-                          name={`${area} (min)`}
-                          data={chartData}
-                          dataKey="min"
-                          type="monotone"
-                          stroke="none"
-                          fill={color}
-                          fillOpacity={0.1}
-                          dot={false}
-                          isAnimationActive={false}
-                          activeDot={false}
-                          stackId={`${area}-band`}
-                        />
-                        <Area
-                          name={`${area} (range)`}
-                          data={chartData}
-                          dataKey="range"
-                          type="monotone"
-                          stroke="none"
-                          fill={color}
-                          fillOpacity={0.1}
-                          dot={false}
-                          isAnimationActive={false}
-                          activeDot={false}
-                          stackId={`${area}-band`}
-                        />
-                      </>
-                    )}
-                    <Line
-                      name={`${area} (${aggType})`}
+  const chartContent = metrics.map(([metricKey, metric]) => (
+    <Paper key={metricKey} sx={{ p: 2 }} variant="outlined">
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+        {metric.label} (Summary)
+      </Typography>
+      <ResponsiveContainer width="100%" height={320}>
+        <ComposedChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            dataKey="time"
+            type="number"
+            domain={['auto', 'auto']}
+            tickFormatter={(timestamp) =>
+              new Date(timestamp as number).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }
+          />
+          <YAxis />
+          <Tooltip labelFormatter={(timestamp) => new Date(+timestamp).toLocaleTimeString()} />
+          <Legend />
+          {areas.map((area) => {
+            const color = paletteForArea(area);
+            const data = aggregate(area, metricInfo[metricKey as keyof typeof metricInfo].key as keyof Sample);
+            const chartData = data.map((row) => ({
+              time: row.time,
+              value: row[aggType],
+              min: row.min,
+              max: row.max,
+              range: row.max - row.min,
+            }));
+            return (
+              <React.Fragment key={area}>
+                {showBand && (
+                  <>
+                    <Area
+                      name={`${area} (min)`}
                       data={chartData}
-                      dataKey="value"
+                      dataKey="min"
                       type="monotone"
-                      stroke={color}
-                      strokeWidth={2}
+                      stroke="none"
+                      fill={color}
+                      fillOpacity={0.1}
                       dot={false}
                       isAnimationActive={false}
+                      activeDot={false}
+                      stackId={`${area}-band`}
                     />
-                  </React.Fragment>
-                );
-              })}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </Paper>
-      ))}
-    </Stack>
-  );
+                    <Area
+                      name={`${area} (range)`}
+                      data={chartData}
+                      dataKey="range"
+                      type="monotone"
+                      stroke="none"
+                      fill={color}
+                      fillOpacity={0.1}
+                      dot={false}
+                      isAnimationActive={false}
+                      activeDot={false}
+                      stackId={`${area}-band`}
+                    />
+                  </>
+                )}
+                <Line
+                  name={`${area} (${aggType})`}
+                  data={chartData}
+                  dataKey="value"
+                  type="monotone"
+                  stroke={color}
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </React.Fragment>
+            );
+          })}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </Paper>
+  ));
+
+  if (gridLayout) {
+    return (
+      <>
+        {chartContent.map((chart, index) => (
+          <Grid item xs={12} md={4} key={index}>
+            {chart}
+          </Grid>
+        ))}
+      </>
+    );
+  }
+
+  return <Stack spacing={2}>{chartContent}</Stack>;
 }

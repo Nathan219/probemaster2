@@ -18,6 +18,8 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ThresholdInfo, StatInfo } from '../utils/commandParsing';
 import SerialLog from './SerialLog';
+import { ProbesPanel, UnassignProbesPanel } from './Lists';
+import { Probe, Location, AreaName } from '../utils/types';
 
 export type AreaData = {
   area: string;
@@ -45,29 +47,51 @@ interface CommandCenterProps {
   areas: Map<string, AreaData>;
   setAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
   sendCommand: (cmd: string) => Promise<void>;
+  probes: Record<string, Probe>;
+  locations: Record<string, Location>;
+  setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
+  setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
+  areasList: Set<string>;
+  getAreasTimestamp: number | null;
+  clearSerialLog: () => void;
+  onProbeAssignmentRef: React.MutableRefObject<((probeId: string, area: string, location: string) => void) | null>;
 }
 
-export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef, onCommandLogRef, areas, setAreas, sendCommand }: CommandCenterProps) {
+export default function CommandCenter({
+  port,
+  baud,
+  connected,
+  serialLog,
+  onCommandResponseRef,
+  onCommandLogRef,
+  areas,
+  setAreas,
+  sendCommand,
+  probes,
+  locations,
+  setProbes,
+  setLocations,
+  areasList,
+  getAreasTimestamp,
+  clearSerialLog,
+  onProbeAssignmentRef,
+}: CommandCenterProps) {
   const [commandInput, setCommandInput] = useState('');
   const [commandLog, setCommandLog] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
 
-  const onLine = useCallback(
-    async (line: string) => {
-      if (!line) return;
-      setCommandLog((prev) => [...prev, `[RX] ${line}`].slice(-1000));
-      // State updates are handled in App.tsx, we just log here
-    },
-    []
-  );
+  // Calculate loading state: loading if timestamp exists and we have less than 7 areas
+  const isLoadingAreas = getAreasTimestamp !== null && areas.size < 7;
 
-  const onCommandLog = useCallback(
-    (line: string) => {
-      setCommandLog((prev) => [...prev, line].slice(-1000));
-    },
-    []
-  );
+  const onLine = useCallback(async (line: string) => {
+    if (!line) return;
+    setCommandLog((prev) => [...prev, `[RX] ${line}`].slice(-1000));
+    // State updates are handled in App.tsx, we just log here
+  }, []);
+
+  const onCommandLog = useCallback((line: string) => {
+    setCommandLog((prev) => [...prev, line].slice(-1000));
+  }, []);
 
   // Register callback to receive command responses from App.tsx
   useEffect(() => {
@@ -103,76 +127,97 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
     <Container maxWidth="xl" sx={{ py: 2 }}>
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 2 }} variant="outlined">
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Command Interface
-            </Typography>
-            {!connected && (
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                Not connected. Connect serial port to use commands.
-              </Alert>
-            )}
-            <Stack spacing={2}>
-              <TextField
-                label="Command"
-                value={commandInput}
-                onChange={(e) => setCommandInput(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') handleSendCommand();
-                }}
-                disabled={!connected}
-                fullWidth
-                size="small"
-              />
-              <Button variant="contained" onClick={handleSendCommand} disabled={!connected} fullWidth>
-                Send Command
-              </Button>
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Quick Actions
-                </Typography>
-                <Stack spacing={1}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => sendCommand('GET STATS')}
-                    disabled={!connected}
-                    fullWidth
-                  >
-                    GET STATS
-                  </Button>
-                </Stack>
-              </Box>
-            </Stack>
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Command Log
+          <Stack spacing={2}>
+            <UnassignProbesPanel
+              probes={probes}
+              locations={locations}
+              setProbes={setProbes}
+              sendCommand={sendCommand}
+              connected={connected}
+              setCommandCenterAreas={setAreas}
+            />
+            <ProbesPanel
+              probes={probes}
+              locations={locations}
+              setProbes={setProbes}
+              setLocations={setLocations}
+              areas={areasList}
+              sendCommand={sendCommand}
+              connected={connected}
+              onProbeAssignmentRef={onProbeAssignmentRef}
+              setCommandCenterAreas={setAreas}
+            />
+            <Paper sx={{ p: 2 }} variant="outlined">
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Command Interface
               </Typography>
-              <Paper
-                variant="outlined"
-                sx={{
-                  p: 1,
-                  maxHeight: 400,
-                  overflow: 'auto',
-                  bgcolor: 'background.default',
-                  fontFamily: 'monospace',
-                  fontSize: '0.75rem',
-                }}
-              >
-                {commandLog.length === 0 ? (
-                  <Typography variant="caption" color="text.secondary">
-                    No commands yet...
+              {!connected && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  Not connected. Connect serial port to use commands.
+                </Alert>
+              )}
+              <Stack spacing={2}>
+                <TextField
+                  label="Command"
+                  value={commandInput}
+                  onChange={(e) => setCommandInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') handleSendCommand();
+                  }}
+                  disabled={!connected}
+                  fullWidth
+                  size="small"
+                />
+                <Button variant="contained" onClick={handleSendCommand} disabled={!connected} fullWidth>
+                  Send Command
+                </Button>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Quick Actions
                   </Typography>
-                ) : (
-                  commandLog.map((line, idx) => (
-                    <Box key={idx} sx={{ mb: 0.5 }}>
-                      {line}
-                    </Box>
-                  ))
-                )}
-              </Paper>
-            </Box>
-          </Paper>
+                  <Stack spacing={1}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => sendCommand('GET STATS')}
+                      disabled={!connected}
+                      fullWidth
+                    >
+                      GET STATS
+                    </Button>
+                  </Stack>
+                </Box>
+              </Stack>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  Command Log
+                </Typography>
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 1,
+                    maxHeight: 400,
+                    overflow: 'auto',
+                    bgcolor: 'background.default',
+                    fontFamily: 'monospace',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {commandLog.length === 0 ? (
+                    <Typography variant="caption" color="text.secondary">
+                      No commands yet...
+                    </Typography>
+                  ) : (
+                    commandLog.map((line, idx) => (
+                      <Box key={idx} sx={{ mb: 0.5 }}>
+                        {line}
+                      </Box>
+                    ))
+                  )}
+                </Paper>
+              </Box>
+            </Paper>
+          </Stack>
         </Grid>
 
         <Grid item xs={12} md={8}>
@@ -180,17 +225,36 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
             <Typography variant="h6" sx={{ mb: 2 }}>
               Areas Configuration
             </Typography>
-            {areas.size > 0 && (
-              <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {Array.from(areas.values())
-                  .sort((a, b) => a.area.localeCompare(b.area))
-                  .map((areaData) => (
+            {isLoadingAreas && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CircularProgress size={20} />
+                  <Box>
+                    <Typography variant="body2">Loading areas... ({areas.size}/7)</Typography>
+                    {getAreasTimestamp && (
+                      <Typography variant="caption" color="text.secondary">
+                        Request sent at {new Date(getAreasTimestamp).toLocaleTimeString()}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              </Alert>
+            )}
+            <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {Object.values(AreaName)
+                .sort((a, b) => a.localeCompare(b))
+                .map((areaName) => {
+                  // Areas are now stored with normalized names, so direct lookup should work
+                  const areaData = areas.get(areaName);
+                  const hasData = !!areaData;
+                  const hasLocations = (areaData?.locations?.size ?? 0) > 0;
+                  return (
                     <Chip
-                      key={areaData.area}
+                      key={areaName}
                       label={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <span>{areaData.area}</span>
-                          {areaData.locations.size > 0 && (
+                          <span>{areaName}</span>
+                          {hasLocations && (
                             <Box
                               component="span"
                               sx={{
@@ -205,33 +269,34 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                         </Box>
                       }
                       onClick={() => {
-                        // Expand the accordion
-                        setExpandedAreas((prev) => {
-                          const next = new Set(prev);
-                          next.add(areaData.area);
-                          return next;
-                        });
-                        // Scroll to the area
-                        setTimeout(() => {
-                          const element = document.getElementById(`area-${areaData.area}`);
-                          if (element) {
-                            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                          }
-                        }, 100);
+                        if (hasData) {
+                          // Expand the accordion
+                          setExpandedAreas((prev) => {
+                            const next = new Set(prev);
+                            next.add(areaName);
+                            return next;
+                          });
+                          // Scroll to the area
+                          setTimeout(() => {
+                            const element = document.getElementById(`area-${areaName}`);
+                            if (element) {
+                              element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                          }, 100);
+                        }
                       }}
-                      variant={areaData.locations.size > 0 ? 'filled' : 'outlined'}
-                      color={areaData.locations.size > 0 ? 'primary' : 'default'}
-                      sx={{ cursor: 'pointer' }}
+                      variant={hasLocations ? 'filled' : 'outlined'}
+                      color={hasLocations ? 'primary' : 'default'}
+                      sx={{
+                        cursor: hasData ? 'pointer' : 'default',
+                        opacity: hasData ? 1 : 0.5,
+                      }}
+                      disabled={!hasData}
                     />
-                  ))}
-              </Box>
-            )}
-            {loading && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-                <CircularProgress />
-              </Box>
-            )}
-            {areas.size === 0 && !loading && (
+                  );
+                })}
+            </Box>
+            {areas.size === 0 && !isLoadingAreas && (
               <Alert severity="info">No areas discovered yet. Send GET AREAS to discover areas.</Alert>
             )}
             {Array.from(areas.values()).map((areaData) => (
@@ -337,19 +402,13 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
                                     Fetch
                                   </Button>
                                 </Box>
-                                {threshold ? (
-                                  <ThresholdForm
-                                    area={areaData.area}
-                                    metric={metric}
-                                    initialValues={threshold.values}
-                                    onSave={(values) => handleSetThreshold(areaData.area, metric, values)}
-                                    disabled={!connected}
-                                  />
-                                ) : (
-                                  <Typography variant="body2" color="text.secondary">
-                                    Not loaded. Click Fetch to load thresholds.
-                                  </Typography>
-                                )}
+                                <ThresholdForm
+                                  area={areaData.area}
+                                  metric={metric}
+                                  initialValues={threshold?.values ?? Array(6).fill(-1)}
+                                  onSave={(values) => handleSetThreshold(areaData.area, metric, values)}
+                                  disabled={!connected}
+                                />
                               </Paper>
                             </Grid>
                             <Grid item xs={12} md={6}>
@@ -378,7 +437,7 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
         </Grid>
       </Grid>
 
-      <SerialLog log={serialLog} maxHeight={300} />
+      <SerialLog log={serialLog} maxHeight={300} onClear={clearSerialLog} />
     </Container>
   );
 }

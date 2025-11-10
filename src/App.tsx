@@ -4,22 +4,23 @@ import Header from './components/Header';
 import Filters from './components/Filters';
 import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
-import { ProbesPanel, UnassignProbesPanel, LatestReadings } from './components/Lists';
+import { LatestReadings } from './components/Lists';
 import CommandCenter, { AreaData } from './components/CommandCenter';
 import SerialLog from './components/SerialLog';
+import PixelVisualization from './components/PixelVisualization';
 import { makeTheme } from './theme';
 import { Sample, Probe, Location } from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
-import { parseAreaResponse, parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
+import { parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
-import { createSimSetup, makeSimTickers } from './sim';
 
 function App() {
   const [dark, setDark] = useState<boolean>(() => {
     const s = localStorage.getItem('pm_dark');
     return s ? s === '1' : true;
   });
+
   useEffect(() => {
     localStorage.setItem('pm_dark', dark ? '1' : '0');
   }, [dark]);
@@ -35,7 +36,6 @@ function App() {
   const [baud, setBaud] = useState(115200);
   const [status, setStatus] = useState('Idle');
   const [serialLog, setSerialLog] = useState('');
-  const [simTimer, setSimTimer] = useState<number | null>(null);
 
   // Data
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -45,6 +45,12 @@ function App() {
 
   // Command Center areas data (shared between tabs)
   const [commandCenterAreas, setCommandCenterAreas] = useState<Map<string, AreaData>>(new Map());
+
+  // GET AREAS loading state
+  const [getAreasTimestamp, setGetAreasTimestamp] = useState<number | null>(null);
+
+  // Pixel data (area -> pixel count 0-6)
+  const [pixelData, setPixelData] = useState<Record<string, number>>({});
 
   // Filters
   const [metricVisibility, setMetricVisibility] = useState({ CO2: true, Temp: true, Hum: true, Sound: true });
@@ -92,6 +98,15 @@ function App() {
     setSerialLog((prev) => (prev + `[ROUTE USB->UART1] ${cmd}\n`).slice(-20000));
     // Log to CommandCenter's command log if callback is set
     commandLogCallbackRef.current?.(`[TX] ${cmd}`);
+
+    // Track GET AREAS command
+    if (cmd.trim().toUpperCase() === 'GET AREAS') {
+      setGetAreasTimestamp(Date.now());
+      // Clear existing areas to start fresh
+      setCommandCenterAreas(new Map());
+      setAreas(new Set());
+    }
+
     try {
       // Get or reuse writer
       if (!writerRef.current) {
@@ -231,7 +246,6 @@ function App() {
     }
     // Also need to check if samples have probe IDs that match (with normalization)
     const normalizedActiveProbes = new Set(Array.from(activeProbes).map((id) => normalizeProbeId(id)));
-    const normalizedAllowed = new Set(Array.from(allowed).map((id) => normalizeProbeId(id)));
     return new Set(
       [...allowed].filter((id) => {
         const normalizedId = normalizeProbeId(id);
@@ -257,9 +271,46 @@ function App() {
 
   const commandResponseCallbackRef = useRef<((line: string) => void) | null>(null);
   const commandLogCallbackRef = useRef<((line: string) => void) | null>(null);
+  const probeAssignmentCallbackRef = useRef<((probeId: string, area: string, location: string) => void) | null>(null);
+
+  // Clear loading state when 7 areas are received
+  useEffect(() => {
+    if (commandCenterAreas.size >= 7 && getAreasTimestamp !== null) {
+      setGetAreasTimestamp(null);
+    }
+  }, [commandCenterAreas.size, getAreasTimestamp]);
 
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
+
+    // Check for PROBE ACCEPTED message: [UART1] WEBd: PROBE e6e0 FLOOR12 ROTUNDA ACCEPTED
+    const probeMatch = line.match(/PROBE\s+(\S+)\s+(\S+)\s+(\S+)\s+ACCEPTED/i);
+    if (probeMatch) {
+      const probeId = probeMatch[1];
+      const area = probeMatch[2];
+      const location = probeMatch[3];
+      probeAssignmentCallbackRef.current?.(probeId, area, location);
+    }
+
+    // Check for PIXELS message: [UART1] WEBd: PIXELS FLOOR11 0
+    const pixelsMatch = line.match(/PIXELS\s+(\S+)\s+(\S+)/i);
+    if (pixelsMatch) {
+      const area = pixelsMatch[1];
+      const valueStr = pixelsMatch[2];
+      const value = parseFloat(valueStr);
+      if (!isNaN(value)) {
+        // Normalize area name (FLOOR11 -> FLOOR11, FLOOR 11 -> FLOOR11)
+        let normalizedArea = area.toUpperCase();
+        const floorMatch = normalizedArea.match(/FLOOR\s*(\d+)/);
+        if (floorMatch) {
+          normalizedArea = `FLOOR${floorMatch[1]}`;
+        }
+        setPixelData((prev) => ({
+          ...prev,
+          [normalizedArea]: Math.max(0, Math.min(6, Math.round(value))),
+        }));
+      }
+    }
 
     // Check if this is a command response and route to CommandCenter
     if (
@@ -276,16 +327,18 @@ function App() {
 
         if (parsed.type === 'area' && parsed.data) {
           const areaInfo = parsed.data as AreaInfo;
+          // Area names come in uppercase format (e.g., "FLOOR11")
+          const areaName = areaInfo.area.toUpperCase();
           // Add to Dashboard areas set
           setAreas((prev) => {
             const next = new Set(prev);
-            next.add(areaInfo.area);
+            next.add(areaName);
             return next;
           });
           // Update CommandCenter areas data
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
-            const existingArea = next.get(areaInfo.area);
+            const existingArea = next.get(areaName);
 
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map<string, string>();
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
@@ -297,8 +350,8 @@ function App() {
               newLocations.set(areaInfo.location, areaInfo.probeId);
             }
 
-            next.set(areaInfo.area, {
-              area: areaInfo.area,
+            next.set(areaName, {
+              area: areaName,
               locations: newLocations,
               thresholds: newThresholds,
               stats: newStats,
@@ -308,9 +361,10 @@ function App() {
           });
         } else if (parsed.type === 'threshold' && parsed.data) {
           const thresholdInfo = parsed.data as ThresholdInfo;
+          const areaName = thresholdInfo.area.toUpperCase();
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
-            const existingArea = next.get(thresholdInfo.area);
+            const existingArea = next.get(areaName);
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
             const newStats = existingArea ? new Map(existingArea.stats) : new Map();
@@ -320,17 +374,17 @@ function App() {
             const normalizedMetric =
               upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : thresholdInfo.metric;
 
-            newThresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric });
+            newThresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric, area: areaName });
 
             if (!existingArea) {
-              next.set(thresholdInfo.area, {
-                area: thresholdInfo.area,
+              next.set(areaName, {
+                area: areaName,
                 locations: newLocations,
                 thresholds: newThresholds,
                 stats: newStats,
               });
             } else {
-              next.set(thresholdInfo.area, {
+              next.set(areaName, {
                 ...existingArea,
                 thresholds: newThresholds,
               });
@@ -340,9 +394,10 @@ function App() {
           });
         } else if (parsed.type === 'stat' && parsed.data) {
           const statInfo = parsed.data as StatInfo;
+          const areaName = statInfo.area.toUpperCase();
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
-            const existingArea = next.get(statInfo.area);
+            const existingArea = next.get(areaName);
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
             const newStats = existingArea ? new Map(existingArea.stats) : new Map();
@@ -352,17 +407,17 @@ function App() {
             const normalizedMetric =
               upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : statInfo.metric;
 
-            newStats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric });
+            newStats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric, area: areaName });
 
             if (!existingArea) {
-              next.set(statInfo.area, {
-                area: statInfo.area,
+              next.set(areaName, {
+                area: areaName,
                 locations: newLocations,
                 thresholds: newThresholds,
                 stats: newStats,
               });
             } else {
-              next.set(statInfo.area, {
+              next.set(areaName, {
                 ...existingArea,
                 stats: newStats,
               });
@@ -370,6 +425,38 @@ function App() {
 
             return next;
           });
+        }
+      }
+    }
+
+    // Parse pixel data from LED diagnostic messages
+    // Format: [LEDS] Pixels: FLOOR11:0, FLOOR12:0, FLOOR15:0, FLOOR16:0, FLOOR17:0, POOL:0, TEAROOM:0
+    if (line.includes('[LEDS]') && line.includes('Pixels:')) {
+      const pixelsMatch = line.match(/\[LEDS\]\s*Pixels:\s*(.+)/i);
+      if (pixelsMatch) {
+        const pixelsStr = pixelsMatch[1].trim();
+        const newPixelData: Record<string, number> = {};
+
+        // Parse area:value pairs
+        const pairs = pixelsStr.split(',').map((p) => p.trim());
+        for (const pair of pairs) {
+          const [area, valueStr] = pair.split(':').map((s) => s.trim());
+          if (area && valueStr !== undefined) {
+            const value = parseFloat(valueStr);
+            if (!isNaN(value)) {
+              // Normalize area name (FLOOR11 -> FLOOR11, FLOOR 11 -> FLOOR11)
+              let normalizedArea = area.toUpperCase();
+              const floorMatch = normalizedArea.match(/FLOOR\s*(\d+)/);
+              if (floorMatch) {
+                normalizedArea = `FLOOR${floorMatch[1]}`;
+              }
+              newPixelData[normalizedArea] = Math.max(0, Math.min(6, Math.round(value)));
+            }
+          }
+        }
+
+        if (Object.keys(newPixelData).length > 0) {
+          setPixelData((prev) => ({ ...prev, ...newPixelData }));
         }
       }
     }
@@ -455,10 +542,6 @@ function App() {
       setTimeout(() => {
         sendCommand('GET AREAS');
       }, 300);
-      if (simTimer) {
-        window.clearInterval(simTimer);
-        setSimTimer(null);
-      }
     } catch (e) {
       console.error(e);
       setStatus('Failed to connect');
@@ -466,6 +549,7 @@ function App() {
       alert(`Failed to connect to serial port: ${errorMessage}`);
     }
   }
+
   async function handleDisconnect() {
     setStatus('Disconnecting...');
     try {
@@ -544,52 +628,6 @@ function App() {
     }
   }
 
-  // SIM
-  function startSim() {
-    const { locations: locs, probes: simProbes } = createSimSetup();
-    if (Object.keys(locations).length === 0) {
-      setLocations((prev) => ({ ...prev, ...locs }));
-      Object.values(locs).forEach((l) => idbPut('locations', l));
-    }
-    const toAdd: Record<string, Probe> = {};
-    for (const id of Object.keys(simProbes)) {
-      if (!probes[id]) {
-        toAdd[id] = { id, locationId: simProbes[id].locationId };
-        idbPut('probes', toAdd[id]);
-      }
-    }
-    if (Object.keys(toAdd).length) setProbes((prev) => ({ ...prev, ...toAdd }));
-
-    const ticker = makeSimTickers(Object.keys({ ...probes, ...toAdd }));
-    const timer = window.setInterval(
-      async () => {
-        const batch = ticker();
-        pending.current.push(...batch);
-        await idbBulkAddSamples(batch);
-      },
-      2000 + Math.random() * 1000
-    );
-    setSimTimer(timer as unknown as number);
-    setStatus('Simulating data...');
-  }
-  function stopSim() {
-    if (simTimer) {
-      window.clearInterval(simTimer);
-      setSimTimer(null);
-      setStatus('Idle');
-    }
-  }
-
-  function handleExport() {
-    const csv = toCSV(samples);
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `samples-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   function csvSafe(s: string) {
     return /,|"|\n/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
@@ -626,117 +664,12 @@ function App() {
     setActiveProbes(new Set());
   }
 
-  async function importZip(file: File) {
-    const zip = await JSZip.loadAsync(file);
-    const getText = async (namePrefix: string) => {
-      const entry = Object.values(zip.files).find((f) => f.name.includes(namePrefix) && !f.dir);
-      return entry ? await entry.async('text') : '';
-    };
-    const s = await getText('samples');
-    const p = await getText('probes');
-    const l = await getText('locations');
-
-    if (p) {
-      const rows = p.trim().split(/\r?\n/);
-      rows.shift();
-      const map: Record<string, Probe> = {};
-      for (const line of rows) {
-        const [id, locationId] = line.split(',');
-        map[id] = { id, locationId: locationId || null };
-        await idbPut('probes', map[id]);
-      }
-      setProbes(map);
-    }
-    if (l) {
-      const rows = l.trim().split(/\r?\n/);
-      rows.shift();
-      const map: Record<string, Location> = {};
-      for (const line of rows) {
-        const parts = parseCSVLine(line);
-        const [id, name, area] = parts;
-        map[id] = { id, name, area };
-        await idbPut('locations', map[id]);
-      }
-      setLocations(map);
-    }
-    if (s) {
-      const rows = s.trim().split(/\r?\n/);
-      rows.shift();
-      const imported: Sample[] = [];
-      for (const line of rows) {
-        const cols = parseCSVLine(line);
-        const ts = Number(cols[0]);
-        const probeId = cols[2];
-        const co2 = Number(cols[3]);
-        const temp = Number(cols[4]);
-        const hum = Number(cols[5]);
-        const sound = Number(cols[6]);
-        imported.push({ ts, probeId, co2, temp, hum, sound });
-      }
-      setSamples(imported.sort((a, b) => a.ts - b.ts));
-      await idbBulkAddSamples(imported);
-    }
-    alert('ZIP imported.');
-  }
-
-  function parseCSVLine(line: string): string[] {
-    const out: string[] = [];
-    let cur = '',
-      inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQ) {
-        if (ch === '"' && line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else if (ch === '"') {
-          inQ = false;
-        } else cur += ch;
-      } else {
-        if (ch === ',') {
-          out.push(cur);
-          cur = '';
-        } else if (ch === '"') inQ = true;
-        else cur += ch;
-      }
-    }
-    out.push(cur);
-    return out;
-  }
-
   const probeListForFilter = useMemo(() => {
     return Object.values(allProbes).map((p) => {
       const area = p.locationId ? dashboardLocations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
       return { id: p.id, label: p.id, area };
     });
   }, [allProbes, dashboardLocations]);
-
-  function handleImport(file: File) {
-    if (file.name.endsWith('.zip')) return importZip(file);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const text = String(reader.result || '');
-      const rows = text.trim().split(/\r?\n/);
-      rows.shift();
-      const imported: Sample[] = [];
-      for (const line of rows) {
-        if (!line.trim()) continue;
-        const [ts, , probeId, co2, temp, hum, sound] = line.split(',');
-        imported.push({
-          ts: Number(ts),
-          probeId,
-          co2: Number(co2),
-          temp: Number(temp),
-          hum: Number(hum),
-          sound: Number(sound),
-        });
-      }
-      setSamples((prev) => [...prev, ...imported].sort((a, b) => a.ts - b.ts));
-      await idbBulkAddSamples(imported);
-      alert(`Imported ${imported.length} rows from CSV.`);
-    };
-    reader.readAsText(file);
-  }
 
   return (
     <ThemeProvider theme={theme}>
@@ -748,22 +681,9 @@ function App() {
         setBaud={setBaud}
         onConnect={handleConnect}
         onDisconnect={handleDisconnect}
-        onExport={() => {
-          const csv = toCSV(samples);
-          const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'samples.csv';
-          a.click();
-          URL.revokeObjectURL(url);
-        }}
-        onImport={handleImport}
         onBackupClear={handleBackupClear}
         dark={dark}
         setDark={setDark}
-        onStartSim={startSim}
-        onStopSim={stopSim}
-        simRunning={!!simTimer}
         onGetAreas={() => sendCommand('GET AREAS')}
       />
 
@@ -772,6 +692,7 @@ function App() {
           <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
             <Tab label="Dashboard" />
             <Tab label="Command Center" />
+            <Tab label="Spy Mode" />
           </Tabs>
         </Box>
 
@@ -824,31 +745,8 @@ function App() {
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <Grid container spacing={2}>
-                  <Grid item xs={12}>
-                    <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <UnassignProbesPanel
-                      probes={allProbes}
-                      locations={dashboardLocations}
-                      setProbes={setProbes}
-                      sendCommand={sendCommand}
-                      connected={!!port}
-                    />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <ProbesPanel
-                      probes={allProbes}
-                      locations={dashboardLocations}
-                      setProbes={setProbes}
-                      setLocations={setLocations}
-                      areas={areas}
-                      sendCommand={sendCommand}
-                      connected={!!port}
-                    />
-                  </Grid>
-                </Grid>
+                <PixelVisualization pixelData={pixelData} sendCommand={sendCommand} connected={!!port} />
+                <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
               </Grid>
             </Grid>
 
@@ -867,7 +765,38 @@ function App() {
             areas={commandCenterAreas}
             setAreas={setCommandCenterAreas}
             sendCommand={sendCommand}
+            probes={allProbes}
+            locations={dashboardLocations}
+            setProbes={setProbes}
+            setLocations={setLocations}
+            areasList={areas}
+            getAreasTimestamp={getAreasTimestamp}
+            clearSerialLog={() => setSerialLog('')}
+            onProbeAssignmentRef={probeAssignmentCallbackRef}
           />
+        )}
+
+        {activeTab === 2 && (
+          <Grid container spacing={2}>
+            <IndividualCharts
+              samples={filteredSamples}
+              probes={allProbes}
+              locations={dashboardLocations}
+              activeProbes={activeProbes}
+              metricVisibility={metricVisibility}
+              gridLayout={true}
+            />
+            <SummaryCharts
+              samples={filteredSamples}
+              probes={allProbes}
+              locations={dashboardLocations}
+              activeAreas={activeAreas}
+              metricVisibility={metricVisibility}
+              aggType={aggType}
+              showBand={showBand}
+              gridLayout={true}
+            />
+          </Grid>
         )}
       </Container>
     </ThemeProvider>
