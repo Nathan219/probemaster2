@@ -18,6 +18,8 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ThresholdInfo, StatInfo } from '../utils/commandParsing';
 import SerialLog from './SerialLog';
+import { ProbesPanel, UnassignProbesPanel } from './Lists';
+import { Probe, Location } from '../utils/types';
 
 export type AreaData = {
   area: string;
@@ -45,9 +47,14 @@ interface CommandCenterProps {
   areas: Map<string, AreaData>;
   setAreas: React.Dispatch<React.SetStateAction<Map<string, AreaData>>>;
   sendCommand: (cmd: string) => Promise<void>;
+  probes: Record<string, Probe>;
+  locations: Record<string, Location>;
+  setProbes: React.Dispatch<React.SetStateAction<Record<string, Probe>>>;
+  setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
+  areasList: Set<string>;
 }
 
-export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef, onCommandLogRef, areas, setAreas, sendCommand }: CommandCenterProps) {
+export default function CommandCenter({ port, baud, connected, serialLog, onCommandResponseRef, onCommandLogRef, areas, setAreas, sendCommand, probes, locations, setProbes, setLocations, areasList }: CommandCenterProps) {
   const [commandInput, setCommandInput] = useState('');
   const [commandLog, setCommandLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,10 +110,27 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
     <Container maxWidth="xl" sx={{ py: 2 }}>
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 2 }} variant="outlined">
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Command Interface
-            </Typography>
+          <Stack spacing={2}>
+            <UnassignProbesPanel
+              probes={probes}
+              locations={locations}
+              setProbes={setProbes}
+              sendCommand={sendCommand}
+              connected={connected}
+            />
+            <ProbesPanel
+              probes={probes}
+              locations={locations}
+              setProbes={setProbes}
+              setLocations={setLocations}
+              areas={areasList}
+              sendCommand={sendCommand}
+              connected={connected}
+            />
+            <Paper sx={{ p: 2 }} variant="outlined">
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Command Interface
+              </Typography>
             {!connected && (
               <Alert severity="warning" sx={{ mb: 2 }}>
                 Not connected. Connect serial port to use commands.
@@ -173,6 +197,7 @@ export default function CommandCenter({ port, baud, connected, serialLog, onComm
               </Paper>
             </Box>
           </Paper>
+          </Stack>
         </Grid>
 
         <Grid item xs={12} md={8}>

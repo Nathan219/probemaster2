@@ -4,7 +4,7 @@ import Header from './components/Header';
 import Filters from './components/Filters';
 import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
-import { ProbesPanel, UnassignProbesPanel, LatestReadings } from './components/Lists';
+import { LatestReadings } from './components/Lists';
 import CommandCenter, { AreaData } from './components/CommandCenter';
 import SerialLog from './components/SerialLog';
 import { makeTheme } from './theme';
@@ -824,31 +824,7 @@ function App() {
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <Grid container spacing={2}>
-                  <Grid item xs={12}>
-                    <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <UnassignProbesPanel
-                      probes={allProbes}
-                      locations={dashboardLocations}
-                      setProbes={setProbes}
-                      sendCommand={sendCommand}
-                      connected={!!port}
-                    />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <ProbesPanel
-                      probes={allProbes}
-                      locations={dashboardLocations}
-                      setProbes={setProbes}
-                      setLocations={setLocations}
-                      areas={areas}
-                      sendCommand={sendCommand}
-                      connected={!!port}
-                    />
-                  </Grid>
-                </Grid>
+                <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
               </Grid>
             </Grid>
 
@@ -867,6 +843,11 @@ function App() {
             areas={commandCenterAreas}
             setAreas={setCommandCenterAreas}
             sendCommand={sendCommand}
+            probes={allProbes}
+            locations={dashboardLocations}
+            setProbes={setProbes}
+            setLocations={setLocations}
+            areasList={areas}
           />
         )}
       </Container>
