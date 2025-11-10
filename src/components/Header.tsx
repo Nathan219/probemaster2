@@ -25,6 +25,7 @@ export default function Header(p: any) {
     onStartSim,
     onStopSim,
     simRunning,
+    onGetAreas,
   } = p;
   return (
     <AppBar position="sticky" color="default" elevation={1}>
@@ -56,35 +57,15 @@ export default function Header(p: any) {
               Connect Serial
             </Button>
           ) : (
-            <Button variant="contained" color="error" onClick={onDisconnect}>
-              Disconnect
-            </Button>
+            <>
+              <Button variant="contained" color="error" onClick={onDisconnect}>
+                Disconnect
+              </Button>
+              <Button variant="outlined" onClick={onGetAreas} disabled={!connected}>
+                GET AREAS
+              </Button>
+            </>
           )}
-          {!simRunning ? (
-            <Button variant="outlined" onClick={onStartSim}>
-              Generate Test Data
-            </Button>
-          ) : (
-            <Button variant="outlined" color="warning" onClick={onStopSim}>
-              Stop Simulation
-            </Button>
-          )}
-          <Button variant="outlined" onClick={onExport}>
-            Export CSV
-          </Button>
-          <Button variant="outlined" component="label">
-            Import CSV/ZIP
-            <input
-              type="file"
-              hidden
-              accept=".csv,.zip"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onImport(f);
-                (e.target as HTMLInputElement).value = '';
-              }}
-            />
-          </Button>
           <Button variant="outlined" onClick={onBackupClear}>
             Backup & Clear
           </Button>

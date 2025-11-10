@@ -38,9 +38,9 @@ export default function Filters(p: any) {
                 next.clear();
                 next.add('All');
               } else {
-                if (next.has('All')) next.delete('All');
-                next.has(a) ? next.delete(a) : next.add(a);
-                if (next.size === 0) next.add('All');
+                // When clicking an individual area, clear all others and select only this one
+                next.clear();
+                next.add(a);
               }
               setActiveAreas(next);
             }}

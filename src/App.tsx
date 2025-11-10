@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ThemeProvider, CssBaseline, Container, Grid, Paper, Typography } from '@mui/material';
+import { ThemeProvider, CssBaseline, Container, Grid, Paper, Typography, Tabs, Tab, Box } from '@mui/material';
 import Header from './components/Header';
 import Filters from './components/Filters';
 import IndividualCharts from './components/IndividualCharts';
 import SummaryCharts from './components/SummaryCharts';
-import { ProbesPanel, LocationsPanel, LatestReadings } from './components/Lists';
+import { ProbesPanel, UnassignProbesPanel, LatestReadings } from './components/Lists';
+import CommandCenter, { AreaData } from './components/CommandCenter';
+import SerialLog from './components/SerialLog';
 import { makeTheme } from './theme';
 import { Sample, Probe, Location } from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
+import { parseAreaResponse, parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
 import { createSimSetup, makeSimTickers } from './sim';
@@ -23,6 +26,9 @@ function App() {
 
   const theme = makeTheme(dark);
 
+  // Tabs
+  const [activeTab, setActiveTab] = useState(0);
+
   // Serial
   const [port, setPort] = useState<SerialPort | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
@@ -37,6 +43,9 @@ function App() {
   const [locations, setLocations] = useState<Record<string, Location>>({});
   const [areas, setAreas] = useState<Set<string>>(new Set());
 
+  // Command Center areas data (shared between tabs)
+  const [commandCenterAreas, setCommandCenterAreas] = useState<Map<string, AreaData>>(new Map());
+
   // Filters
   const [metricVisibility, setMetricVisibility] = useState({ CO2: true, Temp: true, Hum: true, Sound: true });
   const [activeAreas, setActiveAreas] = useState<Set<string>>(new Set(['All']));
@@ -45,6 +54,8 @@ function App() {
   const [showBand, setShowBand] = useState<boolean>(true);
 
   const pending = useRef<Sample[]>([]);
+  const writerRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
+
   useEffect(() => {
     const t = window.setInterval(() => {
       if (pending.current.length) {
@@ -57,6 +68,48 @@ function App() {
     }, 400);
     return () => clearInterval(t);
   }, []);
+
+  // Initialize writer when port changes
+  useEffect(() => {
+    if (port && port.writable && !writerRef.current) {
+      writerRef.current = port.writable.getWriter();
+    }
+    return () => {
+      if (writerRef.current) {
+        writerRef.current.releaseLock();
+        writerRef.current = null;
+      }
+    };
+  }, [port]);
+
+  // Function to send commands via serial port
+  async function sendCommand(cmd: string) {
+    if (!port || !port.writable) {
+      console.error('Port not writable');
+      return;
+    }
+    const command = cmd.trim() + '\n';
+    setSerialLog((prev) => (prev + `[ROUTE USB->UART1] ${cmd}\n`).slice(-20000));
+    // Log to CommandCenter's command log if callback is set
+    commandLogCallbackRef.current?.(`[TX] ${cmd}`);
+    try {
+      // Get or reuse writer
+      if (!writerRef.current) {
+        writerRef.current = port.writable.getWriter();
+      }
+      const encoder = new TextEncoder();
+      await writerRef.current.write(encoder.encode(command));
+    } catch (e) {
+      console.error('Send command error', e);
+      // If writer is invalid, clear it so we get a new one next time
+      if (writerRef.current) {
+        try {
+          writerRef.current.releaseLock();
+        } catch {}
+        writerRef.current = null;
+      }
+    }
+  }
 
   // Load persisted data
   useEffect(() => {
@@ -74,17 +127,7 @@ function App() {
     })().catch(console.error);
   }, []);
 
-  useEffect(() => {
-    const set = new Set<string>();
-    Object.values(locations).forEach((l) => set.add(l.area));
-    setAreas(set);
-  }, [locations]);
-
-  useEffect(() => {
-    if (activeProbes.size === 0 && Object.keys(probes).length) {
-      setActiveProbes(new Set(Object.keys(probes)));
-    }
-  }, [probes]);
+  // Areas are now only populated from GET AREAS command responses, not from locations
 
   // Auto-persist probes and locations to IndexedDB
   useEffect(() => {
@@ -99,34 +142,251 @@ function App() {
     }
   }, [locations]);
 
+  // Derive locations and probes from GET AREAS data for Dashboard
+  const dashboardLocations = useMemo(() => {
+    const locs: Record<string, Location> = {};
+    commandCenterAreas.forEach((areaData, area) => {
+      areaData.locations.forEach((probeId, locationName) => {
+        // Use location name as the location ID
+        const locationId = `${area}-${locationName}`;
+        locs[locationId] = {
+          id: locationId,
+          name: locationName,
+          area: area,
+        };
+      });
+    });
+    return locs;
+  }, [commandCenterAreas]);
+
+  const dashboardProbes = useMemo(() => {
+    const probs: Record<string, Probe> = {};
+    commandCenterAreas.forEach((areaData) => {
+      areaData.locations.forEach((probeId, locationName) => {
+        // Find the location ID for this probe
+        const locationId = Object.keys(dashboardLocations).find(
+          (lid) => dashboardLocations[lid].name === locationName && dashboardLocations[lid].area === areaData.area
+        );
+        probs[probeId] = {
+          id: probeId,
+          locationId: locationId || null,
+        };
+      });
+    });
+    return probs;
+  }, [commandCenterAreas, dashboardLocations]);
+
+  // Helper function to normalize probe ID (strip prefixes like [UART2])
+  function normalizeProbeId(probeId: string | undefined): string {
+    if (!probeId) return '';
+    // Remove prefixes like [UART2], [UART1], etc.
+    const match = probeId.match(/\[.*?\]\s*(.+)$/);
+    return match ? match[1].trim() : probeId.trim();
+  }
+
+  // Merge dashboard probes with sensor data probes
+  const allProbes = useMemo(() => {
+    const merged = { ...dashboardProbes };
+    // Add probes from sensor data that aren't in dashboardProbes
+    Object.values(probes).forEach((p) => {
+      if (!p.id) return;
+      const normalizedId = normalizeProbeId(p.id);
+      if (!normalizedId) return;
+      // Use normalized ID for the merged probe
+      if (!merged[normalizedId]) {
+        // Try to find this probe in commandCenterAreas to get its location
+        let locationId: string | null = null;
+        for (const [area, areaData] of commandCenterAreas.entries()) {
+          for (const [locName, probeId] of areaData.locations.entries()) {
+            if (probeId === normalizedId) {
+              // Found the probe, create the location ID using the same format as dashboardLocations
+              const locId = `${area}-${locName}`;
+              locationId = locId;
+              break;
+            }
+          }
+          if (locationId) break;
+        }
+        merged[normalizedId] = {
+          id: normalizedId,
+          locationId: locationId || null,
+        };
+      }
+    });
+    return merged;
+  }, [dashboardProbes, probes, commandCenterAreas]);
+
   const visibleProbeIds = useMemo(() => {
     const allowed = new Set<string>();
-    for (const p of Object.values(probes)) {
-      const area = p.locationId ? locations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
+    for (const p of Object.values(allProbes)) {
+      const area = p.locationId ? dashboardLocations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
       if (activeAreas.has('All') || activeAreas.has(area)) {
         allowed.add(p.id);
       }
     }
-    return new Set([...allowed].filter((id) => activeProbes.has(id)));
-  }, [activeAreas, probes, locations, activeProbes]);
+    // If no probes match area filter but we have samples, include all probes with samples (normalized)
+    if (allowed.size === 0 && samples.length > 0) {
+      const probeIdsFromSamples = new Set(samples.map((s) => normalizeProbeId(s.probeId)));
+      probeIdsFromSamples.forEach((id) => allowed.add(id));
+    }
+    // Also need to check if samples have probe IDs that match (with normalization)
+    const normalizedActiveProbes = new Set(Array.from(activeProbes).map((id) => normalizeProbeId(id)));
+    const normalizedAllowed = new Set(Array.from(allowed).map((id) => normalizeProbeId(id)));
+    return new Set(
+      [...allowed].filter((id) => {
+        const normalizedId = normalizeProbeId(id);
+        return normalizedActiveProbes.has(normalizedId) || normalizedActiveProbes.size === 0;
+      })
+    );
+  }, [activeAreas, allProbes, dashboardLocations, activeProbes, samples]);
 
   const filteredSamples = useMemo(
-    () => samples.filter((s) => visibleProbeIds.has(s.probeId)),
+    () =>
+      samples.filter((s) => {
+        const normalizedId = normalizeProbeId(s.probeId);
+        return visibleProbeIds.has(normalizedId) || visibleProbeIds.has(s.probeId);
+      }),
     [samples, visibleProbeIds]
   );
 
+  useEffect(() => {
+    if (activeProbes.size === 0 && Object.keys(allProbes).length) {
+      setActiveProbes(new Set(Object.keys(allProbes)));
+    }
+  }, [allProbes, activeProbes]);
+
+  const commandResponseCallbackRef = useRef<((line: string) => void) | null>(null);
+  const commandLogCallbackRef = useRef<((line: string) => void) | null>(null);
+
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
+
+    // Check if this is a command response and route to CommandCenter
+    if (
+      line.includes('AREA:') ||
+      line.includes('STAT:') ||
+      line.includes('THRESHOLD') ||
+      line.includes('USE_BASELINE')
+    ) {
+      commandResponseCallbackRef.current?.(line);
+
+      // Parse command responses to update shared state
+      if (line.includes('AREA:') || line.includes('STAT:') || line.includes('THRESHOLD')) {
+        const parsed = parseCommandResponse(line);
+
+        if (parsed.type === 'area' && parsed.data) {
+          const areaInfo = parsed.data as AreaInfo;
+          // Add to Dashboard areas set
+          setAreas((prev) => {
+            const next = new Set(prev);
+            next.add(areaInfo.area);
+            return next;
+          });
+          // Update CommandCenter areas data
+          setCommandCenterAreas((prev) => {
+            const next = new Map(prev);
+            const existingArea = next.get(areaInfo.area);
+
+            const newLocations = existingArea ? new Map(existingArea.locations) : new Map<string, string>();
+            const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
+            const newStats = existingArea ? new Map(existingArea.stats) : new Map();
+
+            if (areaInfo.probeId === '' && areaInfo.location === '') {
+              newLocations.clear();
+            } else if (areaInfo.probeId && areaInfo.probeId.trim() && areaInfo.location && areaInfo.location.trim()) {
+              newLocations.set(areaInfo.location, areaInfo.probeId);
+            }
+
+            next.set(areaInfo.area, {
+              area: areaInfo.area,
+              locations: newLocations,
+              thresholds: newThresholds,
+              stats: newStats,
+            });
+
+            return next;
+          });
+        } else if (parsed.type === 'threshold' && parsed.data) {
+          const thresholdInfo = parsed.data as ThresholdInfo;
+          setCommandCenterAreas((prev) => {
+            const next = new Map(prev);
+            const existingArea = next.get(thresholdInfo.area);
+            const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
+            const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
+            const newStats = existingArea ? new Map(existingArea.stats) : new Map();
+
+            // Normalize metric name
+            const upper = thresholdInfo.metric.toUpperCase();
+            const normalizedMetric =
+              upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : thresholdInfo.metric;
+
+            newThresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric });
+
+            if (!existingArea) {
+              next.set(thresholdInfo.area, {
+                area: thresholdInfo.area,
+                locations: newLocations,
+                thresholds: newThresholds,
+                stats: newStats,
+              });
+            } else {
+              next.set(thresholdInfo.area, {
+                ...existingArea,
+                thresholds: newThresholds,
+              });
+            }
+
+            return next;
+          });
+        } else if (parsed.type === 'stat' && parsed.data) {
+          const statInfo = parsed.data as StatInfo;
+          setCommandCenterAreas((prev) => {
+            const next = new Map(prev);
+            const existingArea = next.get(statInfo.area);
+            const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
+            const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
+            const newStats = existingArea ? new Map(existingArea.stats) : new Map();
+
+            // Normalize metric name
+            const upper = statInfo.metric.toUpperCase();
+            const normalizedMetric =
+              upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : statInfo.metric;
+
+            newStats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric });
+
+            if (!existingArea) {
+              next.set(statInfo.area, {
+                area: statInfo.area,
+                locations: newLocations,
+                thresholds: newThresholds,
+                stats: newStats,
+              });
+            } else {
+              next.set(statInfo.area, {
+                ...existingArea,
+                stats: newStats,
+              });
+            }
+
+            return next;
+          });
+        }
+      }
+    }
+
     const parsed = parseLine(line);
     if (!parsed) return;
-    pending.current.push(parsed);
-    if (!probes[parsed.probeId]) {
-      const newProbe: Probe = { id: parsed.probeId, locationId: null };
+    // Normalize probe ID to strip prefixes like [UART2]
+    const normalizedProbeId = normalizeProbeId(parsed.probeId);
+    const normalizedSample = { ...parsed, probeId: normalizedProbeId };
+    pending.current.push(normalizedSample);
+    if (!probes[normalizedProbeId]) {
+      const newProbe: Probe = { id: normalizedProbeId, locationId: null };
       setProbes((prev) => ({ ...prev, [newProbe.id]: newProbe }));
       await idbPut('probes', newProbe);
       setActiveProbes((prev) => new Set(prev).add(newProbe.id));
     }
-    await idbBulkAddSamples([parsed]);
+    await idbBulkAddSamples([normalizedSample]);
   }
 
   async function handleConnect() {
@@ -134,12 +394,67 @@ function App() {
       alert('Web Serial not supported. Use Chrome/Edge over HTTPS.');
       return;
     }
+    // If already connected, disconnect first
+    if (port) {
+      await handleDisconnect();
+      // Wait a bit for cleanup to complete
+      await new Promise((r) => setTimeout(r, 200));
+    }
     try {
       const p = await (navigator as any).serial.requestPort();
-      await p.open({ baudRate: baud });
+      // Try to open the port, but handle the case where it's already open
+      try {
+        await p.open({ baudRate: baud });
+      } catch (openError: any) {
+        // If port is already open, that's okay - we can still use it
+        if (openError.name === 'InvalidStateError' && openError.message.includes('already open')) {
+          console.log('Port already open, reusing existing connection');
+          // If readable is locked, we need to cancel the reader first, then close and reopen
+          if (p.readable && p.readable.locked) {
+            console.log('Port is open but locked, closing and reopening...');
+            try {
+              // Cancel any existing reader first
+              if (readerRef.current) {
+                try {
+                  await readerRef.current.cancel();
+                } catch {}
+                readerRef.current = null;
+              }
+              // Wait a bit for the stream to unlock
+              await new Promise((r) => setTimeout(r, 200));
+              // Now try to close the port
+              try {
+                await p.close();
+              } catch (closeError: any) {
+                // If close fails because stream is still locked, wait more and try again
+                if (closeError.message && closeError.message.includes('locked')) {
+                  await new Promise((r) => setTimeout(r, 300));
+                  await p.close();
+                } else {
+                  throw closeError;
+                }
+              }
+              await new Promise((r) => setTimeout(r, 100));
+              await p.open({ baudRate: baud });
+            } catch (e) {
+              throw new Error('Failed to reopen port: ' + e);
+            }
+          }
+        } else {
+          // Some other error occurred
+          throw openError;
+        }
+      }
       setPort(p);
       setStatus('Connected. Reading...');
-      startReading(p);
+      // Start reading after a small delay to ensure port is ready
+      setTimeout(() => {
+        startReading(p);
+      }, 100);
+      // Call GET AREAS after connection is established
+      setTimeout(() => {
+        sendCommand('GET AREAS');
+      }, 300);
       if (simTimer) {
         window.clearInterval(simTimer);
         setSimTimer(null);
@@ -147,6 +462,8 @@ function App() {
     } catch (e) {
       console.error(e);
       setStatus('Failed to connect');
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      alert(`Failed to connect to serial port: ${errorMessage}`);
     }
   }
   async function handleDisconnect() {
@@ -163,34 +480,67 @@ function App() {
   }
 
   async function startReading(p: SerialPort) {
-    const textDecoder = new TextDecoderStream();
-    const readableClosed = p.readable!.pipeTo(textDecoder.writable as WritableStream<Uint8Array>);
-    const reader = (textDecoder.readable as ReadableStream<string>).getReader();
-    readerRef.current = reader as any;
+    // Cancel any existing reader first
+    if (readerRef.current) {
+      try {
+        await readerRef.current.cancel();
+      } catch {}
+      readerRef.current = null;
+    }
 
-    let buffer = '';
-    setStatus('Reading...');
+    if (!p.readable) {
+      console.error('Port readable stream not available');
+      setStatus('Port readable stream not available');
+      return;
+    }
+
+    // Check if readable stream is already locked (has an active reader)
+    if (p.readable.locked) {
+      console.log('Readable stream is locked, waiting a bit...');
+      // Wait a bit and try again
+      await new Promise((r) => setTimeout(r, 200));
+      if (p.readable.locked) {
+        console.log('Readable stream still locked, cannot start reading');
+        setStatus('Port already in use');
+        return;
+      }
+    }
+
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) {
-          buffer += value;
-          let idx;
-          while ((idx = buffer.search(/\r?\n/)) >= 0) {
-            const line = buffer.slice(0, idx);
-            buffer = buffer.slice(idx + 1);
-            await onLine(line.trim());
+      const textDecoder = new TextDecoderStream();
+      const readableClosed = p.readable.pipeTo(textDecoder.writable as WritableStream<Uint8Array>);
+      const reader = (textDecoder.readable as ReadableStream<string>).getReader();
+      readerRef.current = reader as any;
+
+      let buffer = '';
+      setStatus('Reading...');
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            buffer += value;
+            let idx;
+            while ((idx = buffer.search(/\r?\n/)) >= 0) {
+              const line = buffer.slice(0, idx);
+              buffer = buffer.slice(idx + 1);
+              await onLine(line.trim());
+            }
           }
+          await new Promise((r) => setTimeout(r, 0));
         }
-        await new Promise((r) => setTimeout(r, 0));
+      } catch (e) {
+        console.error('Read loop error', e);
+      } finally {
+        readerRef.current = null;
+        try {
+          await readableClosed;
+        } catch {}
       }
     } catch (e) {
-      console.error('Read loop error', e);
-    } finally {
-      try {
-        await readableClosed;
-      } catch {}
+      console.error('Failed to start reading:', e);
+      alert('Failed to start reading: ' + e);
+      setStatus('Failed to start reading');
     }
   }
 
@@ -355,11 +705,11 @@ function App() {
   }
 
   const probeListForFilter = useMemo(() => {
-    return Object.values(probes).map((p) => {
-      const area = p.locationId ? locations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
+    return Object.values(allProbes).map((p) => {
+      const area = p.locationId ? dashboardLocations[p.locationId]?.area || 'Unassigned' : 'Unassigned';
       return { id: p.id, label: p.id, area };
     });
-  }, [probes, locations]);
+  }, [allProbes, dashboardLocations]);
 
   function handleImport(file: File) {
     if (file.name.endsWith('.zip')) return importZip(file);
@@ -414,78 +764,111 @@ function App() {
         onStartSim={startSim}
         onStopSim={stopSim}
         simRunning={!!simTimer}
+        onGetAreas={() => sendCommand('GET AREAS')}
       />
 
       <Container maxWidth="xl" sx={{ py: 2 }}>
-        <Filters
-          areas={Array.from(areas).sort()}
-          activeAreas={activeAreas}
-          setActiveAreas={setActiveAreas}
-          metricVisibility={metricVisibility}
-          setMetricVisibility={setMetricVisibility}
-          probes={probeListForFilter}
-          activeProbes={activeProbes}
-          setActiveProbes={setActiveProbes}
-          aggType={aggType}
-          setAggType={setAggType}
-          showBand={showBand}
-          setShowBand={setShowBand}
-        />
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+          <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
+            <Tab label="Dashboard" />
+            <Tab label="Command Center" />
+          </Tabs>
+        </Box>
 
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={8}>
-            <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                Individual (Per-Probe)
-              </Typography>
-              <IndividualCharts
-                samples={filteredSamples}
-                probes={probes}
-                locations={locations}
-                activeProbes={activeProbes}
-                metricVisibility={metricVisibility}
-              />
-            </Paper>
+        {activeTab === 0 && (
+          <>
+            <Filters
+              areas={Array.from(areas).sort()}
+              activeAreas={activeAreas}
+              setActiveAreas={setActiveAreas}
+              metricVisibility={metricVisibility}
+              setMetricVisibility={setMetricVisibility}
+              probes={probeListForFilter}
+              activeProbes={activeProbes}
+              setActiveProbes={setActiveProbes}
+              aggType={aggType}
+              setAggType={setAggType}
+              showBand={showBand}
+              setShowBand={setShowBand}
+            />
 
-            <Paper sx={{ p: 2 }} variant="outlined">
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                Summary (Per-Area)
-              </Typography>
-              <SummaryCharts
-                samples={filteredSamples}
-                probes={probes}
-                locations={locations}
-                activeAreas={activeAreas}
-                metricVisibility={metricVisibility}
-                aggType={aggType}
-                showBand={showBand}
-              />
-            </Paper>
-          </Grid>
-
-          <Grid item xs={12} md={4}>
             <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <LatestReadings samples={filteredSamples} probes={probes} locations={locations} />
+              <Grid item xs={12} md={8}>
+                <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Individual (Per-Probe)
+                  </Typography>
+                  <IndividualCharts
+                    samples={filteredSamples}
+                    probes={allProbes}
+                    locations={dashboardLocations}
+                    activeProbes={activeProbes}
+                    metricVisibility={metricVisibility}
+                  />
+                </Paper>
+
+                <Paper sx={{ p: 2 }} variant="outlined">
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Summary (Per-Area)
+                  </Typography>
+                  <SummaryCharts
+                    samples={filteredSamples}
+                    probes={allProbes}
+                    locations={dashboardLocations}
+                    activeAreas={activeAreas}
+                    metricVisibility={metricVisibility}
+                    aggType={aggType}
+                    showBand={showBand}
+                  />
+                </Paper>
               </Grid>
-              <Grid item xs={12}>
-                <ProbesPanel probes={probes} locations={locations} setProbes={setProbes} />
-              </Grid>
-              <Grid item xs={12}>
-                <LocationsPanel locations={locations} setLocations={setLocations} />
+
+              <Grid item xs={12} md={4}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <UnassignProbesPanel
+                      probes={allProbes}
+                      locations={dashboardLocations}
+                      setProbes={setProbes}
+                      sendCommand={sendCommand}
+                      connected={!!port}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <ProbesPanel
+                      probes={allProbes}
+                      locations={dashboardLocations}
+                      setProbes={setProbes}
+                      setLocations={setLocations}
+                      areas={areas}
+                      sendCommand={sendCommand}
+                      connected={!!port}
+                    />
+                  </Grid>
+                </Grid>
               </Grid>
             </Grid>
-          </Grid>
-        </Grid>
 
-        <Paper sx={{ p: 2, my: 2 }} variant="outlined">
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Serial Log
-          </Typography>
-          <pre style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 240, overflow: 'auto' }}>
-            {serialLog || 'No data yet...'}
-          </pre>
-        </Paper>
+            <SerialLog log={serialLog} />
+          </>
+        )}
+
+        {activeTab === 1 && (
+          <CommandCenter
+            port={port}
+            baud={baud}
+            connected={!!port}
+            serialLog={serialLog}
+            onCommandResponseRef={commandResponseCallbackRef}
+            onCommandLogRef={commandLogCallbackRef}
+            areas={commandCenterAreas}
+            setAreas={setCommandCenterAreas}
+            sendCommand={sendCommand}
+          />
+        )}
       </Container>
     </ThemeProvider>
   );
