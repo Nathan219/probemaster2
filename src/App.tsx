@@ -292,6 +292,26 @@ function App() {
       probeAssignmentCallbackRef.current?.(probeId, area, location);
     }
 
+    // Check for PIXELS message: [UART1] WEBd: PIXELS FLOOR11 0
+    const pixelsMatch = line.match(/PIXELS\s+(\S+)\s+(\S+)/i);
+    if (pixelsMatch) {
+      const area = pixelsMatch[1];
+      const valueStr = pixelsMatch[2];
+      const value = parseFloat(valueStr);
+      if (!isNaN(value)) {
+        // Normalize area name (FLOOR11 -> FLOOR11, FLOOR 11 -> FLOOR11)
+        let normalizedArea = area.toUpperCase();
+        const floorMatch = normalizedArea.match(/FLOOR\s*(\d+)/);
+        if (floorMatch) {
+          normalizedArea = `FLOOR${floorMatch[1]}`;
+        }
+        setPixelData((prev) => ({
+          ...prev,
+          [normalizedArea]: Math.max(0, Math.min(6, Math.round(value))),
+        }));
+      }
+    }
+
     // Check if this is a command response and route to CommandCenter
     if (
       line.includes('AREA:') ||
@@ -725,7 +745,7 @@ function App() {
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <PixelVisualization pixelData={pixelData} />
+                <PixelVisualization pixelData={pixelData} sendCommand={sendCommand} connected={!!port} />
                 <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
               </Grid>
             </Grid>

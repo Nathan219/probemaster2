@@ -3,10 +3,14 @@ import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
+import IconButton from '@mui/material/IconButton';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useTheme } from '@mui/material/styles';
 
 interface PixelVisualizationProps {
   pixelData: Record<string, number>;
+  sendCommand?: (cmd: string) => Promise<void>;
+  connected?: boolean;
 }
 
 // Human silhouette icon SVG
@@ -123,8 +127,14 @@ function normalizeAreaName(area: string): string {
   return upper;
 }
 
-export default function PixelVisualization({ pixelData }: PixelVisualizationProps) {
+export default function PixelVisualization({ pixelData, sendCommand, connected }: PixelVisualizationProps) {
   const theme = useTheme();
+  console.log('pixelData', pixelData);
+  const handleRefresh = () => {
+    if (sendCommand && connected) {
+      sendCommand('GET PIXELS');
+    }
+  };
 
   // Get all areas in order
   const areas = Object.keys(AREA_CONFIG).filter((area) => {
@@ -146,19 +156,37 @@ export default function PixelVisualization({ pixelData }: PixelVisualizationProp
       }}
       variant="outlined"
     >
-      <Typography
-        variant="h6"
-        sx={{
-          mb: 2,
-          textAlign: 'center',
-          fontWeight: 700,
-          letterSpacing: 1,
-          color: '#ffffff',
-          fontSize: '1.5rem',
-        }}
-      >
-        WHERE IS EVERY BODY AT?!
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography
+          variant="h6"
+          sx={{
+            textAlign: 'center',
+            fontWeight: 700,
+            letterSpacing: 1,
+            color: '#ffffff',
+            fontSize: '1.5rem',
+            flex: 1,
+          }}
+        >
+          WHERE IS EVERY BODY AT?!
+        </Typography>
+        {sendCommand && (
+          <IconButton
+            onClick={handleRefresh}
+            disabled={!connected}
+            sx={{
+              color: '#ffffff',
+              opacity: connected ? 1 : 0.5,
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.1)',
+              },
+            }}
+            size="small"
+          >
+            <RefreshIcon />
+          </IconButton>
+        )}
+      </Box>
 
       <Stack spacing={1.5}>
         {displayAreas.map((area) => {
