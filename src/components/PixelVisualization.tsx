@@ -5,6 +5,10 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import EmojiPeopleIcon from '@mui/icons-material/EmojiPeople';
+import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
+import SelfImprovementIcon from '@mui/icons-material/SelfImprovement';
+import PoolIcon from '@mui/icons-material/Pool';
 import { useTheme } from '@mui/material/styles';
 
 interface PixelVisualizationProps {
@@ -12,98 +16,6 @@ interface PixelVisualizationProps {
   sendCommand?: (cmd: string) => Promise<void>;
   connected?: boolean;
 }
-
-// Human silhouette icon SVG
-const PersonIcon: React.FC<{ lit: boolean; theme: any }> = ({ lit, theme }) => {
-  const fillColor = lit
-    ? theme.palette.mode === 'dark'
-      ? '#ffffff'
-      : '#000000'
-    : theme.palette.mode === 'dark'
-      ? '#333333'
-      : '#cccccc';
-  return (
-    <svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M12 8C13.6569 8 15 6.65685 15 5C15 3.34315 13.6569 2 12 2C10.3431 2 9 3.34315 9 5C9 6.65685 10.3431 8 12 8Z"
-        fill={fillColor}
-      />
-      <path
-        d="M12 10C8.68629 10 6 12.6863 6 16V18C6 19.1046 6.89543 20 8 20H16C17.1046 20 18 19.1046 18 18V16C18 12.6863 15.3137 10 12 10Z"
-        fill={fillColor}
-      />
-    </svg>
-  );
-};
-
-// Person with raised arms icon
-const PersonRaisedIcon: React.FC<{ lit: boolean; theme: any }> = ({ lit, theme }) => {
-  const fillColor = lit
-    ? theme.palette.mode === 'dark'
-      ? '#ffffff'
-      : '#000000'
-    : theme.palette.mode === 'dark'
-      ? '#333333'
-      : '#cccccc';
-  return (
-    <svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M12 8C13.6569 8 15 6.65685 15 5C15 3.34315 13.6569 2 12 2C10.3431 2 9 3.34315 9 5C9 6.65685 10.3431 8 12 8Z"
-        fill={fillColor}
-      />
-      <path
-        d="M12 10C8.68629 10 6 12.6863 6 16V18C6 19.1046 6.89543 20 8 20H16C17.1046 20 18 19.1046 18 18V16C18 12.6863 15.3137 10 12 10Z"
-        fill={fillColor}
-      />
-      <path d="M6 6L4 4L2 6" stroke={fillColor} strokeWidth="2" fill="none" />
-      <path d="M18 6L20 4L22 6" stroke={fillColor} strokeWidth="2" fill="none" />
-    </svg>
-  );
-};
-
-// Person sitting in lotus position
-const PersonLotusIcon: React.FC<{ lit: boolean; theme: any }> = ({ lit, theme }) => {
-  const fillColor = lit
-    ? theme.palette.mode === 'dark'
-      ? '#ffffff'
-      : '#000000'
-    : theme.palette.mode === 'dark'
-      ? '#333333'
-      : '#cccccc';
-  return (
-    <svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M12 8C13.6569 8 15 6.65685 15 5C15 3.34315 13.6569 2 12 2C10.3431 2 9 3.34315 9 5C9 6.65685 10.3431 8 12 8Z"
-        fill={fillColor}
-      />
-      <ellipse cx="12" cy="20" rx="8" ry="4" fill={fillColor} />
-    </svg>
-  );
-};
-
-// Swimming person icon
-const PersonSwimmingIcon: React.FC<{ lit: boolean; theme: any }> = ({ lit, theme }) => {
-  const fillColor = lit
-    ? theme.palette.mode === 'dark'
-      ? '#ffffff'
-      : '#000000'
-    : theme.palette.mode === 'dark'
-      ? '#333333'
-      : '#cccccc';
-  return (
-    <svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M12 6C13.6569 6 15 4.65685 15 3C15 1.34315 13.6569 0 12 0C10.3431 0 9 1.34315 9 3C9 4.65685 10.3431 6 12 6Z"
-        fill={fillColor}
-      />
-      <path d="M8 10L6 12L8 14L10 12L8 10Z" fill={fillColor} />
-      <path
-        d="M12 10C8.68629 10 6 12.6863 6 16V18C6 19.1046 6.89543 20 8 20H16C17.1046 20 18 19.1046 18 18V16C18 12.6863 15.3137 10 12 10Z"
-        fill={fillColor}
-      />
-    </svg>
-  );
-};
 
 // Area configuration with icon types
 const AREA_CONFIG: Record<string, { label: string; iconTypes: Array<'person' | 'raised' | 'lotus' | 'swimming'> }> = {
@@ -113,7 +25,7 @@ const AREA_CONFIG: Record<string, { label: string; iconTypes: Array<'person' | '
   FLOOR12: { label: 'FLOOR 12', iconTypes: ['raised', 'person', 'raised', 'person', 'raised', 'person'] },
   FLOOR11: { label: 'FLOOR 11', iconTypes: ['lotus', 'person', 'lotus', 'person', 'lotus', 'person'] },
   TEAROOM: { label: 'TEAROOM', iconTypes: ['lotus', 'lotus', 'lotus', 'lotus', 'lotus', 'lotus'] },
-  POOL: { label: 'POOL', iconTypes: ['swimming', 'swimming', 'person', 'swimming', 'swimming', 'swimming'] },
+  POOL: { label: 'POOL', iconTypes: ['swimming', 'swimming', 'swimming', 'swimming', 'swimming', 'swimming'] },
 };
 
 // Normalize area name (handle variations like FLOOR11 vs FLOOR 11)
@@ -218,17 +130,24 @@ export default function PixelVisualization({ pixelData, sendCommand, connected }
               <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
                 {config.iconTypes.map((iconType, idx) => {
                   const lit = idx < clampedValue;
+                  const iconColor = lit
+                    ? theme.palette.mode === 'dark'
+                      ? '#ffffff'
+                      : '#000000'
+                    : theme.palette.mode === 'dark'
+                      ? '#333333'
+                      : '#cccccc';
                   const IconComponent =
                     iconType === 'raised'
-                      ? PersonRaisedIcon
+                      ? EmojiPeopleIcon
                       : iconType === 'lotus'
-                        ? PersonLotusIcon
+                        ? SelfImprovementIcon
                         : iconType === 'swimming'
-                          ? PersonSwimmingIcon
-                          : PersonIcon;
+                          ? PoolIcon
+                          : DirectionsWalkIcon;
                   return (
                     <Box key={idx} sx={{ display: 'flex', alignItems: 'center' }}>
-                      <IconComponent lit={lit} theme={theme} />
+                      <IconComponent sx={{ color: iconColor, fontSize: '1.5rem' }} />
                     </Box>
                   );
                 })}
