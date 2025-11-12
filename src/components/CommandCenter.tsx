@@ -481,9 +481,12 @@ function ThresholdForm({
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
-    setValues(convertToNullable(initialValues));
-    setHasChanges(false);
-  }, [initialValues]);
+    // Only update from initialValues if there are no unsaved changes
+    // This prevents overwriting user's in-progress edits when new data arrives
+    if (!hasChanges) {
+      setValues(convertToNullable(initialValues));
+    }
+  }, [initialValues, hasChanges]);
 
   const handleChange = (idx: number, val: string) => {
     let newValue: number | null;
