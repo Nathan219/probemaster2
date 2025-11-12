@@ -14,6 +14,13 @@ import { parseLine, toCSV } from './utils/parsing';
 import { parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
 import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
 import JSZip from 'jszip';
+import {
+  generateSampleData,
+  generateGetAreasResponse,
+  generateGetStatsResponse,
+  generateGetThresholdsResponse,
+  getTestProbeIds,
+} from './utils/testMode';
 
 function App() {
   const [dark, setDark] = useState<boolean>(() => {
@@ -36,6 +43,8 @@ function App() {
   const [baud, setBaud] = useState(115200);
   const [status, setStatus] = useState('Idle');
   const [serialLog, setSerialLog] = useState('');
+  const [testMode, setTestMode] = useState(false);
+  const testModeIntervalRef = useRef<number | null>(null);
 
   // Data
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -90,22 +99,69 @@ function App() {
 
   // Function to send commands via serial port
   async function sendCommand(cmd: string) {
-    if (!port || !port.writable) {
-      console.error('Port not writable');
-      return;
-    }
-    const command = cmd.trim() + '\n';
+    const cmdUpper = cmd.trim().toUpperCase();
     setSerialLog((prev) => (prev + `[ROUTE USB->UART1] ${cmd}\n`).slice(-20000));
     // Log to CommandCenter's command log if callback is set
     commandLogCallbackRef.current?.(`[TX] ${cmd}`);
 
     // Track GET AREAS command
-    if (cmd.trim().toUpperCase() === 'GET AREAS') {
+    if (cmdUpper === 'GET AREAS') {
       setGetAreasTimestamp(Date.now());
       // Clear existing areas to start fresh
       setCommandCenterAreas(new Map());
       setAreas(new Set());
     }
+
+    // Handle test mode command simulation
+    if (testMode) {
+      // Simulate command responses with a small delay
+      setTimeout(async () => {
+        if (cmdUpper === 'GET AREAS') {
+          const responses = generateGetAreasResponse();
+          for (const response of responses) {
+            await onLine(response);
+            // Small delay between responses to simulate real behavior
+            await new Promise((r) => setTimeout(r, 50));
+          }
+        } else if (cmdUpper.startsWith('GET STATS')) {
+          const match = cmd.match(/GET STATS\s+(\S+)\s+(\S+)/i);
+          if (match) {
+            const area = match[1];
+            const metric = match[2];
+            const response = generateGetStatsResponse(area, metric);
+            await onLine(response);
+          } else if (cmdUpper === 'GET STATS') {
+            // GET STATS without area/metric - generate for all areas and metrics
+            const areas = ['FLOOR11', 'FLOOR12', 'FLOOR15', 'FLOOR16', 'FLOOR17', 'POOL', 'TEAROOM'];
+            const metrics = ['CO2', 'TEMP', 'HUM', 'SOUND'];
+            for (const area of areas) {
+              for (const metric of metrics) {
+                const response = generateGetStatsResponse(area, metric);
+                await onLine(response);
+                await new Promise((r) => setTimeout(r, 20));
+              }
+            }
+          }
+        } else if (cmdUpper.startsWith('GET THRESHOLD')) {
+          const match = cmd.match(/GET THRESHOLD(?:S)?\s+(\S+)\s+(\S+)/i);
+          if (match) {
+            const area = match[1];
+            const metric = match[2];
+            const response = generateGetThresholdsResponse(area, metric);
+            await onLine(response);
+          }
+        }
+        // Other commands are just logged, no response generated
+      }, 100);
+      return;
+    }
+
+    // Real serial port handling
+    if (!port || !port.writable) {
+      console.error('Port not writable');
+      return;
+    }
+    const command = cmd.trim() + '\n';
 
     try {
       // Get or reuse writer
@@ -477,6 +533,10 @@ function App() {
   }
 
   async function handleConnect() {
+    if (testMode) {
+      alert('Please exit test mode before connecting to a serial port.');
+      return;
+    }
     if (!('serial' in navigator)) {
       alert('Web Serial not supported. Use Chrome/Edge over HTTPS.');
       return;
@@ -562,6 +622,71 @@ function App() {
     setPort(null);
     setStatus('Disconnected');
   }
+
+  // Test mode toggle handler
+  function handleToggleTestMode() {
+    const newTestMode = !testMode;
+
+    // If trying to enable test mode while connected, disconnect first
+    if (newTestMode && port) {
+      handleDisconnect().then(() => {
+        // Wait a bit for cleanup, then enable test mode
+        setTimeout(() => {
+          setTestMode(true);
+          setStatus('Test Mode');
+          // Start generating periodic sample data
+          const probeIds = getTestProbeIds();
+          testModeIntervalRef.current = window.setInterval(() => {
+            // Generate a random probe's data
+            const randomProbeId = probeIds[Math.floor(Math.random() * probeIds.length)];
+            const sampleLine = generateSampleData(randomProbeId);
+            onLine(sampleLine);
+          }, 3000); // Generate data every 3 seconds
+
+          // Automatically send GET AREAS after a short delay
+          setTimeout(() => {
+            sendCommand('GET AREAS');
+          }, 500);
+        }, 200);
+      });
+      return;
+    }
+
+    setTestMode(newTestMode);
+
+    if (newTestMode) {
+      setStatus('Test Mode');
+      // Start generating periodic sample data
+      const probeIds = getTestProbeIds();
+      testModeIntervalRef.current = window.setInterval(() => {
+        // Generate a random probe's data
+        const randomProbeId = probeIds[Math.floor(Math.random() * probeIds.length)];
+        const sampleLine = generateSampleData(randomProbeId);
+        onLine(sampleLine);
+      }, 3000); // Generate data every 3 seconds
+
+      // Automatically send GET AREAS after a short delay
+      setTimeout(() => {
+        sendCommand('GET AREAS');
+      }, 500);
+    } else {
+      setStatus('Idle');
+      // Stop generating data
+      if (testModeIntervalRef.current !== null) {
+        clearInterval(testModeIntervalRef.current);
+        testModeIntervalRef.current = null;
+      }
+    }
+  }
+
+  // Cleanup test mode interval on unmount
+  useEffect(() => {
+    return () => {
+      if (testModeIntervalRef.current !== null) {
+        clearInterval(testModeIntervalRef.current);
+      }
+    };
+  }, []);
 
   async function startReading(p: SerialPort) {
     // Cancel any existing reader first
@@ -676,7 +801,7 @@ function App() {
       <CssBaseline />
       <Header
         status={status}
-        connected={!!port}
+        connected={!!port || testMode}
         baud={baud}
         setBaud={setBaud}
         onConnect={handleConnect}
@@ -685,6 +810,8 @@ function App() {
         dark={dark}
         setDark={setDark}
         onGetAreas={() => sendCommand('GET AREAS')}
+        testMode={testMode}
+        onToggleTestMode={handleToggleTestMode}
       />
 
       <Container maxWidth="xl" sx={{ py: 2 }}>
@@ -745,7 +872,7 @@ function App() {
               </Grid>
 
               <Grid item xs={12} md={4}>
-                <PixelVisualization pixelData={pixelData} sendCommand={sendCommand} connected={!!port} />
+                <PixelVisualization pixelData={pixelData} sendCommand={sendCommand} connected={!!port || testMode} />
                 <LatestReadings samples={filteredSamples} probes={allProbes} locations={dashboardLocations} />
               </Grid>
             </Grid>
@@ -758,7 +885,7 @@ function App() {
           <CommandCenter
             port={port}
             baud={baud}
-            connected={!!port}
+            connected={!!port || testMode}
             serialLog={serialLog}
             onCommandResponseRef={commandResponseCallbackRef}
             onCommandLogRef={commandLogCallbackRef}

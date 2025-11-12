@@ -10,7 +10,8 @@ import Brightness4Icon from '@mui/icons-material/DarkMode';
 import Brightness7Icon from '@mui/icons-material/LightMode';
 
 export default function Header(p: any) {
-  const { status, connected, baud, setBaud, onConnect, onDisconnect, onBackupClear, dark, setDark, onGetAreas } = p;
+  const { status, connected, baud, setBaud, onConnect, onDisconnect, onBackupClear, dark, setDark, onGetAreas, testMode, onToggleTestMode } = p;
+  const isDisconnected = !connected && !testMode;
   return (
     <AppBar position="sticky" color="default" elevation={1}>
       <Toolbar sx={{ gap: 2, justifyContent: 'space-between' }}>
@@ -36,10 +37,24 @@ export default function Header(p: any) {
               color: 'inherit',
             }}
           />
-          {!connected ? (
-            <Button variant="contained" onClick={onConnect}>
-              Connect Serial
-            </Button>
+          {isDisconnected ? (
+            <>
+              <Button variant="contained" onClick={onConnect}>
+                Connect Serial
+              </Button>
+              <Button variant="outlined" onClick={onToggleTestMode}>
+                Test Mode
+              </Button>
+            </>
+          ) : testMode ? (
+            <>
+              <Button variant="outlined" color="error" onClick={onToggleTestMode}>
+                Exit Test Mode
+              </Button>
+              <Button variant="outlined" onClick={onGetAreas}>
+                GET AREAS
+              </Button>
+            </>
           ) : (
             <>
               <Button variant="contained" color="error" onClick={onDisconnect}>
