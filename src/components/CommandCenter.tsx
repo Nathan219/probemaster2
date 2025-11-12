@@ -14,6 +14,7 @@ import {
   CircularProgress,
   Container,
   Chip,
+  useTheme,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ThresholdInfo, StatInfo } from '../utils/commandParsing';
@@ -524,6 +525,8 @@ function ThresholdForm({
   };
 
   const currentValue = getCurrentValue();
+  const theme = useTheme();
+  const initialValuesNullable = convertToNullable(initialValues);
 
   return (
     <Stack spacing={1}>
@@ -533,6 +536,10 @@ function ThresholdForm({
           const displayValue = isUnset && currentValue !== null ? currentValue : val === null ? '' : val;
           const labelValue =
             val === null ? (currentValue !== null ? currentValue.toString() : 'Unset') : val.toString();
+          const isEdited = val !== initialValuesNullable[idx];
+          const isDark = theme.palette.mode === 'dark';
+          const borderColor = isEdited ? (isDark ? '#ffd54f' : '#ffc107') : undefined;
+
           return (
             <Grid item xs={4} key={idx}>
               <TextField
@@ -549,6 +556,20 @@ function ThresholdForm({
                     color: isUnset && currentValue !== null ? 'text.secondary' : 'text.primary',
                     fontStyle: isUnset && currentValue !== null ? 'italic' : 'normal',
                   },
+                  ...(isEdited && {
+                    '& .MuiOutlinedInput-root': {
+                      '& fieldset': {
+                        borderColor: borderColor,
+                        borderWidth: 2,
+                      },
+                      '&:hover fieldset': {
+                        borderColor: borderColor,
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: borderColor,
+                      },
+                    },
+                  }),
                 }}
                 helperText={isUnset && currentValue !== null ? 'Current value' : undefined}
               />
