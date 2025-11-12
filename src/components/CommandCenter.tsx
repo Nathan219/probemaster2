@@ -405,7 +405,8 @@ export default function CommandCenter({
                                 <ThresholdForm
                                   area={areaData.area}
                                   metric={metric}
-                                  initialValues={threshold?.values ?? Array(6).fill(-1)}
+                                  initialValues={threshold?.values}
+                                  hasThreshold={!!threshold}
                                   onSave={(values) => handleSetThreshold(areaData.area, metric, values)}
                                   disabled={!connected}
                                   stat={stat}
@@ -447,36 +448,66 @@ function ThresholdForm({
   area,
   metric,
   initialValues,
+  hasThreshold,
   onSave,
   disabled,
   stat,
 }: {
   area: string;
   metric: string;
-  initialValues: number[];
+  initialValues: number[] | undefined;
+  hasThreshold: boolean;
   onSave: (values: number[]) => void;
   disabled: boolean;
   stat?: StatInfo;
 }) {
-  const [values, setValues] = useState<number[]>(initialValues);
+  // Convert number[] to (number | null)[]
+  // -1 from protocol is a valid value, not unset
+  // Only null represents unset (when threshold data doesn't exist)
+  const convertToNullable = (vals: number[] | undefined): (number | null)[] => {
+    if (!vals) {
+      return [null, null, null, null, null, null];
+    }
+    return vals.map((v) => v); // Keep all values as-is, including -1
+  };
+
+  // Convert (number | null)[] back to number[] where null becomes -1 for protocol
+  // The protocol uses -1 to represent unset values
+  const convertFromNullable = (vals: (number | null)[]): number[] => {
+    return vals.map((v) => (v === null ? -1 : v));
+  };
+
+  const [values, setValues] = useState<(number | null)[]>(convertToNullable(initialValues));
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
-    setValues(initialValues);
+    setValues(convertToNullable(initialValues));
     setHasChanges(false);
   }, [initialValues]);
 
   const handleChange = (idx: number, val: string) => {
-    const num = val === '' || val === '-' ? -1 : parseFloat(val);
-    if (isNaN(num) && val !== '' && val !== '-') return;
+    let newValue: number | null;
+    if (val === '' || val === '-') {
+      newValue = null; // Unset
+    } else {
+      const num = parseFloat(val);
+      if (isNaN(num)) return;
+      newValue = num; // Can be any number including -1
+    }
     const newValues = [...values];
-    newValues[idx] = num < 0 ? -1 : num;
+    newValues[idx] = newValue;
     setValues(newValues);
-    setHasChanges(JSON.stringify(newValues) !== JSON.stringify(initialValues));
+    setHasChanges(JSON.stringify(newValues) !== JSON.stringify(convertToNullable(initialValues)));
   };
 
   const handleSave = () => {
-    onSave(values);
+    // Check if any values are null (unset)
+    if (values.some((v) => v === null)) {
+      // Don't send command if any values are null
+      return;
+    }
+    // Convert back to number[] for the protocol (all values are set, no nulls)
+    onSave(values.map((v) => v!)); // Non-null assertion is safe here due to check above
     setHasChanges(false);
   };
 
@@ -495,19 +526,21 @@ function ThresholdForm({
     <Stack spacing={1}>
       <Grid container spacing={1}>
         {values.map((val, idx) => {
-          const isUnset = val < 0;
-          const displayValue = isUnset && currentValue !== null ? currentValue : val < 0 ? '' : val;
+          const isUnset = val === null;
+          const displayValue = isUnset && currentValue !== null ? currentValue : val === null ? '' : val;
+          const labelValue =
+            val === null ? (currentValue !== null ? currentValue.toString() : 'Unset') : val.toString();
           return (
             <Grid item xs={4} key={idx}>
               <TextField
-                label={`T${idx + 1}`}
+                label={labelValue}
                 type="number"
                 value={displayValue}
                 onChange={(e) => handleChange(idx, e.target.value)}
                 disabled={disabled}
                 size="small"
                 fullWidth
-                placeholder={currentValue !== null ? currentValue.toString() : '-1'}
+                placeholder={currentValue !== null ? currentValue.toString() : 'Unset'}
                 sx={{
                   '& .MuiInputBase-input': {
                     color: isUnset && currentValue !== null ? 'text.secondary' : 'text.primary',
@@ -520,7 +553,13 @@ function ThresholdForm({
           );
         })}
       </Grid>
-      <Button variant="contained" size="small" onClick={handleSave} disabled={!hasChanges || disabled} fullWidth>
+      <Button
+        variant="contained"
+        size="small"
+        onClick={handleSave}
+        disabled={!hasChanges || disabled || values.some((v) => v === null)}
+        fullWidth
+      >
         Save Thresholds
       </Button>
     </Stack>
