@@ -9,10 +9,18 @@ import CommandCenter, { AreaData } from './components/CommandCenter';
 import SerialLog from './components/SerialLog';
 import PixelVisualization from './components/PixelVisualization';
 import { makeTheme } from './theme';
-import { Sample, Probe, Location } from './utils/types';
+import {
+  Sample,
+  Probe,
+  Location,
+  SerializedAreaData,
+  PersistedAreasData,
+  PersistedPixelData,
+  PersistedTimestamps,
+} from './utils/types';
 import { parseLine, toCSV } from './utils/parsing';
 import { parseCommandResponse, AreaInfo, StatInfo, ThresholdInfo } from './utils/commandParsing';
-import { idbGetAll, idbBulkAddSamples, idbPut, idbClear } from './db/idb';
+import { idbGetAll, idbBulkAddSamples, idbPut, idbClear, idbGet } from './db/idb';
 import JSZip from 'jszip';
 import {
   generateSampleData,
@@ -21,6 +29,48 @@ import {
   generateGetThresholdsResponse,
   getTestProbeIds,
 } from './utils/testMode';
+
+// Serialize Map<string, AreaData> to array for IndexedDB storage
+function serializeAreasData(areas: Map<string, AreaData>): SerializedAreaData[] {
+  return Array.from(areas.entries()).map(([area, areaData]) => ({
+    area: areaData.area,
+    locations: Array.from(areaData.locations.entries()),
+    thresholds: Array.from(areaData.thresholds.entries()),
+    stats: Array.from(areaData.stats.entries()),
+  }));
+}
+
+// Deserialize array back to Map<string, AreaData>
+function deserializeAreasData(serialized: SerializedAreaData[]): Map<string, AreaData> {
+  const map = new Map<string, AreaData>();
+  for (const item of serialized) {
+    map.set(item.area, {
+      area: item.area,
+      locations: new Map(item.locations),
+      thresholds: new Map(item.thresholds),
+      stats: new Map(item.stats),
+    });
+  }
+  return map;
+}
+
+// Format timestamp as relative time (X min ago) or absolute timestamp
+export function formatLastFetched(timestamp: number | null): string {
+  if (!timestamp) return 'Never fetched';
+  const now = Date.now();
+  const diffMs = now - timestamp;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+
+  // For older data, show absolute timestamp
+  return new Date(timestamp).toLocaleString();
+}
 
 function App() {
   const [dark, setDark] = useState<boolean>(() => {
@@ -57,6 +107,13 @@ function App() {
 
   // GET AREAS loading state
   const [getAreasTimestamp, setGetAreasTimestamp] = useState<number | null>(null);
+
+  // Timestamps for last fetched data
+  const [areasLastFetched, setAreasLastFetched] = useState<number | null>(null);
+  const [pixelDataLastFetched, setPixelDataLastFetched] = useState<number | null>(null);
+  // Per-area/metric timestamps for thresholds and stats
+  const [thresholdsLastFetched, setThresholdsLastFetched] = useState<Map<string, number>>(new Map());
+  const [statsLastFetched, setStatsLastFetched] = useState<Map<string, number>>(new Map());
 
   // Pixel data (area -> pixel count 0-6)
   const [pixelData, setPixelData] = useState<Record<string, number>>({});
@@ -185,16 +242,57 @@ function App() {
   // Load persisted data
   useEffect(() => {
     (async () => {
-      const [savedSamples, savedProbes, savedLocations] = await Promise.all([
+      const [
+        savedSamples,
+        savedProbes,
+        savedLocations,
+        savedAreasData,
+        savedPixelData,
+        savedThresholdTimestamps,
+        savedStatTimestamps,
+      ] = await Promise.all([
         idbGetAll('samples'),
         idbGetAll('probes'),
         idbGetAll('locations'),
+        idbGet('areasData', 'areas').catch(() => null),
+        idbGet('pixelData', 'pixels').catch(() => null),
+        idbGet('timestamps', 'thresholds').catch(() => null),
+        idbGet('timestamps', 'stats').catch(() => null),
       ]);
       setSamples(savedSamples as Sample[]);
       const p = Object.fromEntries((savedProbes as Probe[]).map((v) => [v.id, v]));
       setProbes(p);
       const loc = Object.fromEntries((savedLocations as Location[]).map((v) => [v.id, v]));
       setLocations(loc);
+
+      // Restore areas data
+      if (savedAreasData) {
+        const persisted = savedAreasData as PersistedAreasData;
+        const deserialized = deserializeAreasData(persisted.data);
+        setCommandCenterAreas(deserialized);
+        setAreasLastFetched(persisted.lastFetched);
+        // Update areas set from restored data
+        setAreas(new Set(Array.from(deserialized.keys())));
+      }
+
+      // Restore pixel data
+      if (savedPixelData) {
+        const persisted = savedPixelData as PersistedPixelData;
+        setPixelData(persisted.data);
+        setPixelDataLastFetched(persisted.lastFetched);
+      }
+
+      // Restore threshold timestamps
+      if (savedThresholdTimestamps) {
+        const persisted = savedThresholdTimestamps as PersistedTimestamps;
+        setThresholdsLastFetched(new Map(Object.entries(persisted.data)));
+      }
+
+      // Restore stat timestamps
+      if (savedStatTimestamps) {
+        const persisted = savedStatTimestamps as PersistedTimestamps;
+        setStatsLastFetched(new Map(Object.entries(persisted.data)));
+      }
     })().catch(console.error);
   }, []);
 
@@ -329,12 +427,62 @@ function App() {
   const commandLogCallbackRef = useRef<((line: string) => void) | null>(null);
   const probeAssignmentCallbackRef = useRef<((probeId: string, area: string, location: string) => void) | null>(null);
 
-  // Clear loading state when 7 areas are received
+  // Clear loading state when 7 areas are received and update timestamp
   useEffect(() => {
     if (commandCenterAreas.size >= 7 && getAreasTimestamp !== null) {
+      const timestamp = Date.now();
+      setAreasLastFetched(timestamp);
       setGetAreasTimestamp(null);
     }
   }, [commandCenterAreas.size, getAreasTimestamp]);
+
+  // Persist areas data to IndexedDB when it changes
+  useEffect(() => {
+    if (commandCenterAreas.size > 0) {
+      const serialized = serializeAreasData(commandCenterAreas);
+      const persisted: PersistedAreasData = {
+        id: 'areas',
+        data: serialized,
+        lastFetched: areasLastFetched || Date.now(),
+      };
+      idbPut('areasData', persisted).catch(console.error);
+    }
+  }, [commandCenterAreas, areasLastFetched]);
+
+  // Persist pixel data to IndexedDB when it changes
+  useEffect(() => {
+    if (Object.keys(pixelData).length > 0) {
+      const timestamp = pixelDataLastFetched || Date.now();
+      const persisted: PersistedPixelData = {
+        id: 'pixels',
+        data: pixelData,
+        lastFetched: timestamp,
+      };
+      idbPut('pixelData', persisted).catch(console.error);
+    }
+  }, [pixelData, pixelDataLastFetched]);
+
+  // Persist threshold timestamps to IndexedDB when they change
+  useEffect(() => {
+    if (thresholdsLastFetched.size > 0) {
+      const persisted: PersistedTimestamps = {
+        id: 'thresholds',
+        data: Object.fromEntries(thresholdsLastFetched),
+      };
+      idbPut('timestamps', persisted).catch(console.error);
+    }
+  }, [thresholdsLastFetched]);
+
+  // Persist stat timestamps to IndexedDB when they change
+  useEffect(() => {
+    if (statsLastFetched.size > 0) {
+      const persisted: PersistedTimestamps = {
+        id: 'stats',
+        data: Object.fromEntries(statsLastFetched),
+      };
+      idbPut('timestamps', persisted).catch(console.error);
+    }
+  }, [statsLastFetched]);
 
   async function onLine(line: string) {
     setSerialLog((prev) => (prev + line + '\n').slice(-20000));
@@ -365,6 +513,7 @@ function App() {
           ...prev,
           [normalizedArea]: Math.max(0, Math.min(6, Math.round(value))),
         }));
+        setPixelDataLastFetched(Date.now());
       }
     }
 
@@ -418,17 +567,17 @@ function App() {
         } else if (parsed.type === 'threshold' && parsed.data) {
           const thresholdInfo = parsed.data as ThresholdInfo;
           const areaName = thresholdInfo.area.toUpperCase();
+          // Normalize metric name
+          const upper = thresholdInfo.metric.toUpperCase();
+          const normalizedMetric =
+            upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : thresholdInfo.metric;
+
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
             const existingArea = next.get(areaName);
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
             const newStats = existingArea ? new Map(existingArea.stats) : new Map();
-
-            // Normalize metric name
-            const upper = thresholdInfo.metric.toUpperCase();
-            const normalizedMetric =
-              upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : thresholdInfo.metric;
 
             newThresholds.set(normalizedMetric, { ...thresholdInfo, metric: normalizedMetric, area: areaName });
 
@@ -448,20 +597,27 @@ function App() {
 
             return next;
           });
+          // Update threshold timestamp
+          const thresholdKey = `${areaName}-${normalizedMetric}`;
+          setThresholdsLastFetched((prev) => {
+            const next = new Map(prev);
+            next.set(thresholdKey, Date.now());
+            return next;
+          });
         } else if (parsed.type === 'stat' && parsed.data) {
           const statInfo = parsed.data as StatInfo;
           const areaName = statInfo.area.toUpperCase();
+          // Normalize metric name
+          const upper = statInfo.metric.toUpperCase();
+          const normalizedMetric =
+            upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : statInfo.metric;
+
           setCommandCenterAreas((prev) => {
             const next = new Map(prev);
             const existingArea = next.get(areaName);
             const newThresholds = existingArea ? new Map(existingArea.thresholds) : new Map();
             const newLocations = existingArea ? new Map(existingArea.locations) : new Map();
             const newStats = existingArea ? new Map(existingArea.stats) : new Map();
-
-            // Normalize metric name
-            const upper = statInfo.metric.toUpperCase();
-            const normalizedMetric =
-              upper === 'TEMP' ? 'Temp' : upper === 'HUM' ? 'Hum' : upper === 'DB' ? 'Sound' : statInfo.metric;
 
             newStats.set(normalizedMetric, { ...statInfo, metric: normalizedMetric, area: areaName });
 
@@ -479,6 +635,13 @@ function App() {
               });
             }
 
+            return next;
+          });
+          // Update stat timestamp
+          const statKey = `${areaName}-${normalizedMetric}`;
+          setStatsLastFetched((prev) => {
+            const next = new Map(prev);
+            next.set(statKey, Date.now());
             return next;
           });
         }
@@ -513,6 +676,7 @@ function App() {
 
         if (Object.keys(newPixelData).length > 0) {
           setPixelData((prev) => ({ ...prev, ...newPixelData }));
+          setPixelDataLastFetched(Date.now());
         }
       }
     }
@@ -898,6 +1062,9 @@ function App() {
             setLocations={setLocations}
             areasList={areas}
             getAreasTimestamp={getAreasTimestamp}
+            areasLastFetched={areasLastFetched}
+            thresholdsLastFetched={thresholdsLastFetched}
+            statsLastFetched={statsLastFetched}
             clearSerialLog={() => setSerialLog('')}
             onProbeAssignmentRef={probeAssignmentCallbackRef}
           />

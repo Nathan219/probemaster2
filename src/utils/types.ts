@@ -11,3 +11,31 @@ export enum AreaName {
   POOL = 'POOL',
   TEAROOM = 'TEAROOM',
 }
+
+// Serialized AreaData for IndexedDB storage (Maps converted to arrays/objects)
+export type SerializedAreaData = {
+  area: string;
+  locations: Array<[string, string]>; // [location, probeId] pairs
+  thresholds: Array<[string, any]>; // [metric, ThresholdInfo] pairs
+  stats: Array<[string, any]>; // [metric, StatInfo] pairs
+};
+
+// Persisted areas data structure
+export type PersistedAreasData = {
+  id: string;
+  data: SerializedAreaData[];
+  lastFetched: number;
+};
+
+// Persisted pixel data structure
+export type PersistedPixelData = {
+  id: string;
+  data: Record<string, number>;
+  lastFetched: number;
+};
+
+// Persisted timestamps for thresholds and stats (key: "area-metric", value: timestamp)
+export type PersistedTimestamps = {
+  id: string;
+  data: Record<string, number>; // area-metric -> timestamp
+};

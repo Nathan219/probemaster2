@@ -21,6 +21,7 @@ import { ThresholdInfo, StatInfo } from '../utils/commandParsing';
 import SerialLog from './SerialLog';
 import { ProbesPanel, UnassignProbesPanel } from './Lists';
 import { Probe, Location, AreaName } from '../utils/types';
+import { formatLastFetched } from '../App';
 
 export type AreaData = {
   area: string;
@@ -54,6 +55,9 @@ interface CommandCenterProps {
   setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
   areasList: Set<string>;
   getAreasTimestamp: number | null;
+  areasLastFetched: number | null;
+  thresholdsLastFetched: Map<string, number>;
+  statsLastFetched: Map<string, number>;
   clearSerialLog: () => void;
   onProbeAssignmentRef: React.MutableRefObject<((probeId: string, area: string, location: string) => void) | null>;
 }
@@ -74,6 +78,9 @@ export default function CommandCenter({
   setLocations,
   areasList,
   getAreasTimestamp,
+  areasLastFetched,
+  thresholdsLastFetched,
+  statsLastFetched,
   clearSerialLog,
   onProbeAssignmentRef,
 }: CommandCenterProps) {
@@ -223,9 +230,14 @@ export default function CommandCenter({
 
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 2 }} variant="outlined">
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Areas Configuration
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                Areas Configuration
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Last fetched: {formatLastFetched(areasLastFetched)}
+              </Typography>
+            </Box>
             {isLoadingAreas && (
               <Alert severity="info" sx={{ mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -331,29 +343,48 @@ export default function CommandCenter({
                     <Typography variant="subtitle1">
                       {areaData.area} ({areaData.locations.size} location{areaData.locations.size !== 1 ? 's' : ''})
                     </Typography>
-                    <Box
-                      component="span"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        sendCommand(`GET STATS ${areaData.area}`);
-                      }}
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: 'auto',
-                        px: 1.5,
-                        py: 0.5,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 1,
-                        fontSize: '0.875rem',
-                        cursor: connected ? 'pointer' : 'not-allowed',
-                        opacity: connected ? 1 : 0.5,
-                        '&:hover': connected ? { bgcolor: 'action.hover' } : {},
-                      }}
-                    >
-                      Get Stats
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {(() => {
+                        // Find the most recent stat timestamp for this area
+                        const metrics = ['CO2', 'Temp', 'Hum', 'Sound'];
+                        let mostRecentStat: number | null = null;
+                        for (const metric of metrics) {
+                          const key = `${areaData.area}-${metric}`;
+                          const timestamp = statsLastFetched.get(key);
+                          if (timestamp && (!mostRecentStat || timestamp > mostRecentStat)) {
+                            mostRecentStat = timestamp;
+                          }
+                        }
+                        return (
+                          <Typography variant="caption" color="text.secondary">
+                            Last Fetched: {formatLastFetched(mostRecentStat)}
+                          </Typography>
+                        );
+                      })()}
+                      <Box
+                        component="span"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          sendCommand(`GET STATS ${areaData.area}`);
+                        }}
+                        sx={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          minWidth: 'auto',
+                          px: 1.5,
+                          py: 0.5,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          fontSize: '0.875rem',
+                          cursor: connected ? 'pointer' : 'not-allowed',
+                          opacity: connected ? 1 : 0.5,
+                          '&:hover': connected ? { bgcolor: 'action.hover' } : {},
+                        }}
+                      >
+                        Get Stats
+                      </Box>
                     </Box>
                   </Box>
                 </AccordionSummary>
@@ -393,15 +424,26 @@ export default function CommandCenter({
                                   <Typography variant="caption" color="text.secondary">
                                     Thresholds
                                   </Typography>
-                                  <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={() => sendCommand(`GET THRESHOLDS ${areaData.area} ${metric}`)}
-                                    disabled={!connected}
-                                    sx={{ minWidth: 'auto', px: 1, py: 0.5 }}
-                                  >
-                                    Fetch
-                                  </Button>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    {(() => {
+                                      const key = `${areaData.area}-${metric}`;
+                                      const timestamp = thresholdsLastFetched.get(key);
+                                      return (
+                                        <Typography variant="caption" color="text.secondary">
+                                          Last Fetched: {formatLastFetched(timestamp || null)}
+                                        </Typography>
+                                      );
+                                    })()}
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={() => sendCommand(`GET THRESHOLDS ${areaData.area} ${metric}`)}
+                                      disabled={!connected}
+                                      sx={{ minWidth: 'auto', px: 1, py: 0.5 }}
+                                    >
+                                      Fetch
+                                    </Button>
+                                  </Box>
                                 </Box>
                                 <ThresholdForm
                                   area={areaData.area}
@@ -416,9 +458,20 @@ export default function CommandCenter({
                             </Grid>
                             <Grid item xs={12} md={6}>
                               <Paper variant="outlined" sx={{ p: 2 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                                  Statistics
-                                </Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Statistics
+                                  </Typography>
+                                  {(() => {
+                                    const key = `${areaData.area}-${metric}`;
+                                    const timestamp = statsLastFetched.get(key);
+                                    return timestamp ? (
+                                      <Typography variant="caption" color="text.secondary">
+                                        Last Fetched: {formatLastFetched(timestamp)}
+                                      </Typography>
+                                    ) : null;
+                                  })()}
+                                </Box>
                                 {stat ? (
                                   <StatDisplay stat={stat} />
                                 ) : (
