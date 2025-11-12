@@ -408,6 +408,7 @@ export default function CommandCenter({
                                   initialValues={threshold?.values ?? Array(6).fill(-1)}
                                   onSave={(values) => handleSetThreshold(areaData.area, metric, values)}
                                   disabled={!connected}
+                                  stat={stat}
                                 />
                               </Paper>
                             </Grid>
@@ -448,12 +449,14 @@ function ThresholdForm({
   initialValues,
   onSave,
   disabled,
+  stat,
 }: {
   area: string;
   metric: string;
   initialValues: number[];
   onSave: (values: number[]) => void;
   disabled: boolean;
+  stat?: StatInfo;
 }) {
   const [values, setValues] = useState<number[]>(initialValues);
   const [hasChanges, setHasChanges] = useState(false);
@@ -477,23 +480,45 @@ function ThresholdForm({
     setHasChanges(false);
   };
 
+  // Get current value from stats (use max as the current measured value)
+  const getCurrentValue = (): number | null => {
+    if (!stat) return null;
+    // Use max as the current measured value, or min if max is -1
+    if (stat.max !== -1) return stat.max;
+    if (stat.min !== -1) return stat.min;
+    return null;
+  };
+
+  const currentValue = getCurrentValue();
+
   return (
     <Stack spacing={1}>
       <Grid container spacing={1}>
-        {values.map((val, idx) => (
-          <Grid item xs={4} key={idx}>
-            <TextField
-              label={`T${idx + 1}`}
-              type="number"
-              value={val < 0 ? '' : val}
-              onChange={(e) => handleChange(idx, e.target.value)}
-              disabled={disabled}
-              size="small"
-              fullWidth
-              placeholder="-1"
-            />
-          </Grid>
-        ))}
+        {values.map((val, idx) => {
+          const isUnset = val < 0;
+          const displayValue = isUnset && currentValue !== null ? currentValue : val < 0 ? '' : val;
+          return (
+            <Grid item xs={4} key={idx}>
+              <TextField
+                label={`T${idx + 1}`}
+                type="number"
+                value={displayValue}
+                onChange={(e) => handleChange(idx, e.target.value)}
+                disabled={disabled}
+                size="small"
+                fullWidth
+                placeholder={currentValue !== null ? currentValue.toString() : '-1'}
+                sx={{
+                  '& .MuiInputBase-input': {
+                    color: isUnset && currentValue !== null ? 'text.secondary' : 'text.primary',
+                    fontStyle: isUnset && currentValue !== null ? 'italic' : 'normal',
+                  },
+                }}
+                helperText={isUnset && currentValue !== null ? 'Current value' : undefined}
+              />
+            </Grid>
+          );
+        })}
       </Grid>
       <Button variant="contained" size="small" onClick={handleSave} disabled={!hasChanges || disabled} fullWidth>
         Save Thresholds
