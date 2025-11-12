@@ -534,8 +534,6 @@ function ThresholdForm({
         {values.map((val, idx) => {
           const isUnset = val === null;
           const displayValue = isUnset && currentValue !== null ? currentValue : val === null ? '' : val;
-          const labelValue =
-            val === null ? (currentValue !== null ? currentValue.toString() : 'Unset') : val.toString();
           const isEdited = val !== initialValuesNullable[idx];
           const isDark = theme.palette.mode === 'dark';
           const borderColor = isEdited ? (isDark ? '#ffd54f' : '#ffc107') : undefined;
@@ -543,7 +541,7 @@ function ThresholdForm({
           return (
             <Grid item xs={4} key={idx}>
               <TextField
-                label={labelValue}
+                label={`T${idx + 1}`}
                 type="number"
                 value={displayValue}
                 onChange={(e) => handleChange(idx, e.target.value)}
