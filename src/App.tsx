@@ -93,7 +93,14 @@ function App() {
   const [baud, setBaud] = useState(115200);
   const [status, setStatus] = useState('Idle');
   const [serialLog, setSerialLog] = useState('');
-  const [testMode, setTestMode] = useState(false);
+  const [testMode, setTestMode] = useState<boolean>(() => {
+    const s = localStorage.getItem('pm_testMode');
+    return s ? s === '1' : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pm_testMode', testMode ? '1' : '0');
+  }, [testMode]);
   const testModeIntervalRef = useRef<number | null>(null);
 
   // Data
@@ -275,11 +282,23 @@ function App() {
         setAreas(new Set(Array.from(deserialized.keys())));
       }
 
-      // Restore pixel data
+      // Restore pixel data (only if it has actual values)
       if (savedPixelData) {
         const persisted = savedPixelData as PersistedPixelData;
-        setPixelData(persisted.data);
-        setPixelDataLastFetched(persisted.lastFetched);
+        // Only restore if there's actual data (not empty object)
+        if (persisted.data && Object.keys(persisted.data).length > 0) {
+          // Filter out any entries with invalid values
+          const validData: Record<string, number> = {};
+          for (const [key, value] of Object.entries(persisted.data)) {
+            if (typeof value === 'number' && value >= 0 && value <= 6) {
+              validData[key] = value;
+            }
+          }
+          if (Object.keys(validData).length > 0) {
+            setPixelData(validData);
+            setPixelDataLastFetched(persisted.lastFetched);
+          }
+        }
       }
 
       // Restore threshold timestamps
@@ -437,28 +456,53 @@ function App() {
   }, [commandCenterAreas.size, getAreasTimestamp]);
 
   // Persist areas data to IndexedDB when it changes
+  // Use a ref to debounce rapid updates
+  const persistTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
     if (commandCenterAreas.size > 0) {
-      const serialized = serializeAreasData(commandCenterAreas);
-      const persisted: PersistedAreasData = {
-        id: 'areas',
-        data: serialized,
-        lastFetched: areasLastFetched || Date.now(),
-      };
-      idbPut('areasData', persisted).catch(console.error);
+      // Debounce persistence to avoid too many writes
+      if (persistTimeoutRef.current) {
+        clearTimeout(persistTimeoutRef.current);
+      }
+      persistTimeoutRef.current = window.setTimeout(() => {
+        const serialized = serializeAreasData(commandCenterAreas);
+        const persisted: PersistedAreasData = {
+          id: 'areas',
+          data: serialized,
+          lastFetched: areasLastFetched || Date.now(),
+        };
+        idbPut('areasData', persisted).catch(console.error);
+      }, 500); // Wait 500ms after last change
     }
+    return () => {
+      if (persistTimeoutRef.current) {
+        clearTimeout(persistTimeoutRef.current);
+      }
+    };
   }, [commandCenterAreas, areasLastFetched]);
 
   // Persist pixel data to IndexedDB when it changes
   useEffect(() => {
-    if (Object.keys(pixelData).length > 0) {
+    // Only persist if there's actual valid data
+    const validEntries = Object.entries(pixelData).filter(
+      ([_, value]) => typeof value === 'number' && value >= 0 && value <= 6
+    );
+    if (validEntries.length > 0) {
+      const validData = Object.fromEntries(validEntries);
       const timestamp = pixelDataLastFetched || Date.now();
       const persisted: PersistedPixelData = {
         id: 'pixels',
-        data: pixelData,
+        data: validData,
         lastFetched: timestamp,
       };
       idbPut('pixelData', persisted).catch(console.error);
+    } else if (Object.keys(pixelData).length === 0 && pixelDataLastFetched) {
+      // If pixelData is empty but we have a timestamp, clear the stored data
+      idbPut('pixelData', {
+        id: 'pixels',
+        data: {},
+        lastFetched: 0,
+      }).catch(console.error);
     }
   }, [pixelData, pixelDataLastFetched]);
 
@@ -843,14 +887,25 @@ function App() {
     }
   }
 
-  // Cleanup test mode interval on unmount
+  // Start test mode interval if test mode is enabled on mount
+  // Note: We don't auto-send GET AREAS here to preserve restored data
   useEffect(() => {
+    if (testMode) {
+      setStatus('Test Mode');
+      const probeIds = getTestProbeIds();
+      testModeIntervalRef.current = window.setInterval(() => {
+        const randomProbeId = probeIds[Math.floor(Math.random() * probeIds.length)];
+        const sampleLine = generateSampleData(randomProbeId);
+        onLine(sampleLine);
+      }, 3000);
+    }
     return () => {
       if (testModeIntervalRef.current !== null) {
         clearInterval(testModeIntervalRef.current);
+        testModeIntervalRef.current = null;
       }
     };
-  }, []);
+  }, []); // Only run on mount
 
   async function startReading(p: SerialPort) {
     // Cancel any existing reader first
