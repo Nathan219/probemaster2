@@ -129,7 +129,6 @@ function normalizeAreaName(area: string): string {
 
 export default function PixelVisualization({ pixelData, sendCommand, connected }: PixelVisualizationProps) {
   const theme = useTheme();
-  console.log('pixelData', pixelData);
   const handleRefresh = () => {
     if (sendCommand && connected) {
       sendCommand('GET PIXELS');
