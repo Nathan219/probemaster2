@@ -515,6 +515,12 @@ function ThresholdForm({
     setHasChanges(false);
   };
 
+  const handleDiscard = () => {
+    // Reset values back to initial values
+    setValues(convertToNullable(initialValues));
+    setHasChanges(false);
+  };
+
   // Get current value from stats (use max as the current measured value)
   const getCurrentValue = (): number | null => {
     if (!stat) return null;
@@ -575,15 +581,26 @@ function ThresholdForm({
           );
         })}
       </Grid>
-      <Button
-        variant="contained"
-        size="small"
-        onClick={handleSave}
-        disabled={!hasChanges || disabled || values.some((v) => v === null)}
-        fullWidth
-      >
-        Save Thresholds
-      </Button>
+      <Stack direction="row" spacing={1}>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={handleDiscard}
+          disabled={!hasChanges || disabled}
+          sx={{ flex: 1 }}
+        >
+          Discard
+        </Button>
+        <Button
+          variant="contained"
+          size="small"
+          onClick={handleSave}
+          disabled={!hasChanges || disabled || values.some((v) => v === null)}
+          sx={{ flex: 1 }}
+        >
+          Save Thresholds
+        </Button>
+      </Stack>
     </Stack>
   );
 }
