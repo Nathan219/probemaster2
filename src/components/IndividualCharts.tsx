@@ -45,10 +45,11 @@ interface Props {
   locations: Record<string, Location>;
   activeProbes: Set<string>;
   metricVisibility: { CO2: boolean; Temp: boolean; Hum: boolean; Sound: boolean };
+  bucketInterval: number;
   gridLayout?: boolean;
 }
 
-export default function IndividualCharts({ samples, probes, locations, activeProbes, metricVisibility, gridLayout = false }: Props) {
+export default function IndividualCharts({ samples, probes, locations, activeProbes, metricVisibility, bucketInterval, gridLayout = false }: Props) {
   // --- Group samples by probe ---
   const seriesByProbe = useMemo(() => {
     const groups: Record<string, Sample[]> = {};
@@ -93,6 +94,45 @@ export default function IndividualCharts({ samples, probes, locations, activePro
   const metrics = Object.entries(metricInfo).filter(
     ([metricKey]) => metricVisibility[metricKey as keyof typeof metricInfo]
   );
+
+  // --- Aggregate samples by bucket interval for each probe ---
+  const aggregatedDataByProbe = useMemo(() => {
+    const result: Record<string, Record<string, { time: number; value: number }[]>> = {};
+    const activeMetrics = Object.entries(metricInfo).filter(
+      ([metricKey]) => metricVisibility[metricKey as keyof typeof metricInfo]
+    );
+    
+    for (const [probeId, probeSamples] of Object.entries(seriesByProbe)) {
+      result[probeId] = {};
+      
+      for (const [metricKey, metric] of activeMetrics) {
+        const buckets: Record<number, number[]> = {};
+        
+        for (const sample of probeSamples) {
+          const timestamp = Math.floor(sample.ts / bucketInterval) * bucketInterval;
+          const value = (sample as any)[metric.key];
+          if (value != null && Number.isFinite(value)) {
+            (buckets[timestamp] ||= []).push(value);
+          }
+        }
+        
+        const aggregated: { time: number; value: number }[] = [];
+        for (const timestamp of Object.keys(buckets)
+          .map(Number)
+          .sort((timeA, timeB) => timeA - timeB)) {
+          const values = buckets[timestamp];
+          if (values.length > 0) {
+            const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+            aggregated.push({ time: timestamp, value: avg });
+          }
+        }
+        
+        result[probeId][metricKey] = aggregated;
+      }
+    }
+    
+    return result;
+  }, [seriesByProbe, metricVisibility, bucketInterval]);
 
   // --- Render ---
   const chartContent = metrics.map(([metricKey, metric]) => (
@@ -141,7 +181,7 @@ export default function IndividualCharts({ samples, probes, locations, activePro
           />
           <Legend />
 
-          {Object.entries(seriesByProbe).map(([probeId, rows]) => {
+          {Object.entries(seriesByProbe).map(([probeId]) => {
             const area = probeAreas[probeId];
             const areaColor = paletteForArea(area);
             // Get index of this probe within its area for opacity variation
@@ -149,16 +189,14 @@ export default function IndividualCharts({ samples, probes, locations, activePro
             const probeIndexInArea = areaProbes.indexOf(probeId);
             // Vary opacity slightly for probes in the same area (0.7 to 1.0)
             const opacity = 0.7 + (probeIndexInArea % 4) * 0.1;
+            const aggregatedData = aggregatedDataByProbe[probeId]?.[metricKey] || [];
             
             return (
               <Line
                 key={probeId}
                 name={probeLabels[probeId]}
                 type="monotone"
-                data={rows.map((row) => ({
-                  time: row.ts,
-                  value: (row as any)[metric.key],
-                }))}
+                data={aggregatedData}
                 dataKey="value"
                 stroke={areaColor}
                 strokeOpacity={opacity}

@@ -138,6 +138,7 @@ function App() {
   const [activeProbes, setActiveProbes] = useState<Set<string>>(new Set());
   const [aggType, setAggType] = useState<'avg' | 'min' | 'max'>('avg');
   const [showBand, setShowBand] = useState<boolean>(true);
+  const [bucketInterval, setBucketInterval] = useState<number>(30000); // 30 seconds default
 
   const pending = useRef<Sample[]>([]);
   const writerRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
@@ -1115,6 +1116,8 @@ function App() {
               setAggType={setAggType}
               showBand={showBand}
               setShowBand={setShowBand}
+              bucketInterval={bucketInterval}
+              setBucketInterval={setBucketInterval}
             />
 
             <Grid container spacing={2}>
@@ -1129,6 +1132,7 @@ function App() {
                     locations={dashboardLocations}
                     activeProbes={activeProbes}
                     metricVisibility={metricVisibility}
+                    bucketInterval={bucketInterval}
                   />
                 </Paper>
 
@@ -1144,6 +1148,7 @@ function App() {
                     metricVisibility={metricVisibility}
                     aggType={aggType}
                     showBand={showBand}
+                    bucketInterval={bucketInterval}
                   />
                 </Paper>
               </Grid>
@@ -1191,6 +1196,7 @@ function App() {
               locations={dashboardLocations}
               activeProbes={activeProbes}
               metricVisibility={metricVisibility}
+              bucketInterval={bucketInterval}
               gridLayout={true}
             />
             <SummaryCharts
@@ -1201,6 +1207,7 @@ function App() {
               metricVisibility={metricVisibility}
               aggType={aggType}
               showBand={showBand}
+              bucketInterval={bucketInterval}
               gridLayout={true}
             />
           </Grid>
