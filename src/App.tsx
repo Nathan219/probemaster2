@@ -287,7 +287,9 @@ function App() {
         idbGet('timestamps', 'stats').catch(() => null),
       ]);
       setSamples(savedSamples as Sample[]);
-      const p = Object.fromEntries((savedProbes as Probe[]).map((v) => [v.id, v]));
+      // Filter out probes that don't have a 4 character ID
+      const validProbes = (savedProbes as Probe[]).filter((v) => isValidProbeId(v.id));
+      const p = Object.fromEntries(validProbes.map((v) => [v.id, v]));
       setProbes(p);
       const loc = Object.fromEntries((savedLocations as Location[]).map((v) => [v.id, v]));
       setLocations(loc);
@@ -350,6 +352,21 @@ function App() {
     }
   }, [locations]);
 
+  // Helper function to normalize probe ID (strip prefixes like [UART2])
+  function normalizeProbeId(probeId: string | undefined): string {
+    if (!probeId) return '';
+    // Remove prefixes like [UART2], [UART1], etc.
+    const match = probeId.match(/\[.*?\]\s*(.+)$/);
+    return match ? match[1].trim() : probeId.trim();
+  }
+
+  // Helper function to validate probe ID (must be exactly 4 characters)
+  function isValidProbeId(probeId: string | undefined): boolean {
+    if (!probeId) return false;
+    const normalized = normalizeProbeId(probeId);
+    return normalized.length === 4;
+  }
+
   // Derive locations and probes from GET AREAS data for Dashboard
   const dashboardLocations = useMemo(() => {
     const locs: Record<string, Location> = {};
@@ -371,6 +388,10 @@ function App() {
     const probs: Record<string, Probe> = {};
     commandCenterAreas.forEach((areaData) => {
       areaData.locations.forEach((probeId, locationName) => {
+        // Ignore probes that don't have a 4 character ID
+        if (!isValidProbeId(probeId)) {
+          return;
+        }
         // Find the location ID for this probe
         const locationId = Object.keys(dashboardLocations).find(
           (lid) => dashboardLocations[lid].name === locationName && dashboardLocations[lid].area === areaData.area
@@ -384,14 +405,6 @@ function App() {
     return probs;
   }, [commandCenterAreas, dashboardLocations]);
 
-  // Helper function to normalize probe ID (strip prefixes like [UART2])
-  function normalizeProbeId(probeId: string | undefined): string {
-    if (!probeId) return '';
-    // Remove prefixes like [UART2], [UART1], etc.
-    const match = probeId.match(/\[.*?\]\s*(.+)$/);
-    return match ? match[1].trim() : probeId.trim();
-  }
-
   // Merge dashboard probes with sensor data probes
   const allProbes = useMemo(() => {
     const merged = { ...dashboardProbes };
@@ -400,6 +413,10 @@ function App() {
       if (!p.id) return;
       const normalizedId = normalizeProbeId(p.id);
       if (!normalizedId) return;
+      // Ignore probes that don't have a 4 character ID
+      if (!isValidProbeId(normalizedId)) {
+        return;
+      }
       // Use normalized ID for the merged probe
       if (!merged[normalizedId]) {
         // Try to find this probe in commandCenterAreas to get its location
@@ -616,7 +633,10 @@ function App() {
             if (areaInfo.probeId === '' && areaInfo.location === '') {
               newLocations.clear();
             } else if (areaInfo.probeId && areaInfo.probeId.trim() && areaInfo.location && areaInfo.location.trim()) {
-              newLocations.set(areaInfo.location, areaInfo.probeId);
+              // Only add probe if it has a valid 4 character ID
+              if (isValidProbeId(areaInfo.probeId)) {
+                newLocations.set(areaInfo.location, areaInfo.probeId);
+              }
             }
 
             next.set(areaName, {
@@ -749,6 +769,10 @@ function App() {
     if (!parsed) return;
     // Normalize probe ID to strip prefixes like [UART2]
     const normalizedProbeId = normalizeProbeId(parsed.probeId);
+    // Ignore probes that don't have a 4 character ID
+    if (!isValidProbeId(normalizedProbeId)) {
+      return;
+    }
     const normalizedSample = { ...parsed, probeId: normalizedProbeId };
     pending.current.push(normalizedSample);
     if (!probes[normalizedProbeId]) {
