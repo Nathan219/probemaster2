@@ -75,7 +75,28 @@ export function UnassignProbesPanel({
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         Assigned Probes
       </Typography>
-      <Stack spacing={1} maxHeight={200} sx={{ overflow: 'auto', pt: 0.5 }}>
+      <Stack
+        spacing={1}
+        sx={{
+          maxHeight: 200,
+          overflowY: 'scroll',
+          overflowX: 'hidden',
+          pt: 0.5,
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#7E57C2',
+            borderRadius: '4px',
+          },
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#7E57C2 transparent',
+        }}
+      >
         {assignedProbes.map((probe: any) => {
           const location = probe.locationId ? locations[probe.locationId] : null;
           const label = location ? `${location.area} / ${location.name}` : 'Unknown';
@@ -275,7 +296,28 @@ export function ProbesPanel({
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         Probes
       </Typography>
-      <Stack spacing={1} maxHeight={350} sx={{ overflow: 'auto', pt: 0.5 }}>
+      <Stack
+        spacing={1}
+        sx={{
+          maxHeight: 350,
+          overflowY: 'scroll',
+          overflowX: 'hidden',
+          pt: 0.5,
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#7E57C2',
+            borderRadius: '4px',
+          },
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#7E57C2 transparent',
+        }}
+      >
         {Object.values(probes).map((probe: any) => {
           const assignment = probeAssignments[probe.id] || { area: '', location: '' };
           const canAssign = assignment.area && assignment.location;
@@ -340,7 +382,30 @@ export function LatestReadings({
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         <b>Latest Readings</b>
       </Typography>
-      <Stack spacing={1} maxHeight={350} sx={{ overflow: 'auto' }}>
+      <Stack
+        spacing={1}
+        sx={{
+          maxHeight: 350,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#9c27b0',
+            borderRadius: '4px',
+            '&:hover': {
+              background: '#7b1fa2',
+            },
+          },
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#9c27b0 transparent',
+        }}
+      >
         {Object.keys(probes).length === 0 && (
           <Typography variant="body2" color="text.secondary">
             No probes yet.
