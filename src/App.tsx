@@ -188,21 +188,34 @@ function App() {
             await new Promise((r) => setTimeout(r, 50));
           }
         } else if (cmdUpper.startsWith('GET STATS')) {
-          const match = cmd.match(/GET STATS\s+(\S+)\s+(\S+)/i);
-          if (match) {
-            const area = match[1];
-            const metric = match[2];
+          const matchWithMetric = cmd.match(/GET STATS\s+(\S+)\s+(\S+)/i);
+          if (matchWithMetric) {
+            // GET STATS with area and metric
+            const area = matchWithMetric[1];
+            const metric = matchWithMetric[2];
             const response = generateGetStatsResponse(area, metric);
             await onLine(response);
-          } else if (cmdUpper === 'GET STATS') {
-            // GET STATS without area/metric - generate for all areas and metrics
-            const areas = ['FLOOR11', 'FLOOR12', 'FLOOR15', 'FLOOR16', 'FLOOR17', 'POOL', 'TEAROOM'];
-            const metrics = ['CO2', 'TEMP', 'HUM', 'SOUND'];
-            for (const area of areas) {
+          } else {
+            const matchWithArea = cmd.match(/GET STATS\s+(\S+)/i);
+            if (matchWithArea) {
+              // GET STATS with area only - generate for all metrics for that area
+              const area = matchWithArea[1];
+              const metrics = ['CO2', 'Temp', 'Hum', 'Sound'];
               for (const metric of metrics) {
                 const response = generateGetStatsResponse(area, metric);
                 await onLine(response);
                 await new Promise((r) => setTimeout(r, 20));
+              }
+            } else if (cmdUpper === 'GET STATS') {
+              // GET STATS without area/metric - generate for all areas and metrics
+              const areas = ['FLOOR11', 'FLOOR12', 'FLOOR15', 'FLOOR16', 'FLOOR17', 'POOL', 'TEAROOM'];
+              const metrics = ['CO2', 'TEMP', 'HUM', 'SOUND'];
+              for (const area of areas) {
+                for (const metric of metrics) {
+                  const response = generateGetStatsResponse(area, metric);
+                  await onLine(response);
+                  await new Promise((r) => setTimeout(r, 20));
+                }
               }
             }
           }
