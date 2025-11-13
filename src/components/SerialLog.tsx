@@ -19,9 +19,32 @@ export default function SerialLog({ log, maxHeight = 240, onClear }: SerialLogPr
           </IconButton>
         )}
       </Box>
-      <pre style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight, overflow: 'auto' }}>
+      <Box
+        component="pre"
+        sx={{
+          whiteSpace: 'pre-wrap',
+          margin: 0,
+          maxHeight,
+          overflowY: 'scroll',
+          overflowX: 'auto',
+          pr: 1,
+          '&::-webkit-scrollbar': {
+            width: '8px',
+            height: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#7E57C2',
+            borderRadius: '4px',
+          },
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#7E57C2 transparent',
+        }}
+      >
         {log || 'No data yet...'}
-      </pre>
+      </Box>
     </Paper>
   );
 }

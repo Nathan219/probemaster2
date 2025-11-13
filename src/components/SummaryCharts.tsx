@@ -54,6 +54,7 @@ export default function SummaryCharts({
   metricVisibility,
   aggType,
   showBand,
+  bucketInterval,
   gridLayout = false,
 }: {
   samples: Sample[];
@@ -63,6 +64,7 @@ export default function SummaryCharts({
   metricVisibility: { CO2: boolean; Temp: boolean; Hum: boolean; Sound: boolean };
   aggType: 'avg' | 'min' | 'max';
   showBand: boolean;
+  bucketInterval: number;
   gridLayout?: boolean;
 }) {
   const areaSamples = useMemo(() => {
@@ -93,7 +95,7 @@ export default function SummaryCharts({
     const rows = areaSamples[area] || [];
     const buckets: Record<number, number[]> = {};
     for (const sample of rows) {
-      const timestamp = Math.floor(sample.ts / 60000) * 60000;
+      const timestamp = Math.floor(sample.ts / bucketInterval) * bucketInterval;
       (buckets[timestamp] ||= []).push((sample as any)[key] ?? NaN);
     }
     const out: AggRow[] = [];

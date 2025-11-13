@@ -14,12 +14,14 @@ import {
   CircularProgress,
   Container,
   Chip,
+  useTheme,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ThresholdInfo, StatInfo } from '../utils/commandParsing';
 import SerialLog from './SerialLog';
 import { ProbesPanel, UnassignProbesPanel } from './Lists';
 import { Probe, Location, AreaName } from '../utils/types';
+import { formatLastFetched } from '../App';
 
 export type AreaData = {
   area: string;
@@ -53,6 +55,9 @@ interface CommandCenterProps {
   setLocations: React.Dispatch<React.SetStateAction<Record<string, Location>>>;
   areasList: Set<string>;
   getAreasTimestamp: number | null;
+  areasLastFetched: number | null;
+  thresholdsLastFetched: Map<string, number>;
+  statsLastFetched: Map<string, number>;
   clearSerialLog: () => void;
   onProbeAssignmentRef: React.MutableRefObject<((probeId: string, area: string, location: string) => void) | null>;
 }
@@ -73,6 +78,9 @@ export default function CommandCenter({
   setLocations,
   areasList,
   getAreasTimestamp,
+  areasLastFetched,
+  thresholdsLastFetched,
+  statsLastFetched,
   clearSerialLog,
   onProbeAssignmentRef,
 }: CommandCenterProps) {
@@ -222,9 +230,14 @@ export default function CommandCenter({
 
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 2 }} variant="outlined">
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Areas Configuration
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                Areas Configuration
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Last fetched: {formatLastFetched(areasLastFetched)}
+              </Typography>
+            </Box>
             {isLoadingAreas && (
               <Alert severity="info" sx={{ mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -330,29 +343,48 @@ export default function CommandCenter({
                     <Typography variant="subtitle1">
                       {areaData.area} ({areaData.locations.size} location{areaData.locations.size !== 1 ? 's' : ''})
                     </Typography>
-                    <Box
-                      component="span"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        sendCommand(`GET STATS ${areaData.area}`);
-                      }}
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: 'auto',
-                        px: 1.5,
-                        py: 0.5,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 1,
-                        fontSize: '0.875rem',
-                        cursor: connected ? 'pointer' : 'not-allowed',
-                        opacity: connected ? 1 : 0.5,
-                        '&:hover': connected ? { bgcolor: 'action.hover' } : {},
-                      }}
-                    >
-                      Get Stats
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {(() => {
+                        // Find the most recent stat timestamp for this area
+                        const metrics = ['CO2', 'Temp', 'Hum', 'Sound'];
+                        let mostRecentStat: number | null = null;
+                        for (const metric of metrics) {
+                          const key = `${areaData.area}-${metric}`;
+                          const timestamp = statsLastFetched.get(key);
+                          if (timestamp && (!mostRecentStat || timestamp > mostRecentStat)) {
+                            mostRecentStat = timestamp;
+                          }
+                        }
+                        return (
+                          <Typography variant="caption" color="text.secondary">
+                            Last Fetched: {formatLastFetched(mostRecentStat)}
+                          </Typography>
+                        );
+                      })()}
+                      <Box
+                        component="span"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          sendCommand(`GET STATS ${areaData.area}`);
+                        }}
+                        sx={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          minWidth: 'auto',
+                          px: 1.5,
+                          py: 0.5,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          fontSize: '0.875rem',
+                          cursor: connected ? 'pointer' : 'not-allowed',
+                          opacity: connected ? 1 : 0.5,
+                          '&:hover': connected ? { bgcolor: 'action.hover' } : {},
+                        }}
+                      >
+                        Get Stats
+                      </Box>
                     </Box>
                   </Box>
                 </AccordionSummary>
@@ -392,30 +424,54 @@ export default function CommandCenter({
                                   <Typography variant="caption" color="text.secondary">
                                     Thresholds
                                   </Typography>
-                                  <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={() => sendCommand(`GET THRESHOLDS ${areaData.area} ${metric}`)}
-                                    disabled={!connected}
-                                    sx={{ minWidth: 'auto', px: 1, py: 0.5 }}
-                                  >
-                                    Fetch
-                                  </Button>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    {(() => {
+                                      const key = `${areaData.area}-${metric}`;
+                                      const timestamp = thresholdsLastFetched.get(key);
+                                      return (
+                                        <Typography variant="caption" color="text.secondary">
+                                          Last Fetched: {formatLastFetched(timestamp || null)}
+                                        </Typography>
+                                      );
+                                    })()}
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={() => sendCommand(`GET THRESHOLDS ${areaData.area} ${metric}`)}
+                                      disabled={!connected}
+                                      sx={{ minWidth: 'auto', px: 1, py: 0.5 }}
+                                    >
+                                      Fetch
+                                    </Button>
+                                  </Box>
                                 </Box>
                                 <ThresholdForm
                                   area={areaData.area}
                                   metric={metric}
-                                  initialValues={threshold?.values ?? Array(6).fill(-1)}
+                                  initialValues={threshold?.values}
+                                  hasThreshold={!!threshold}
                                   onSave={(values) => handleSetThreshold(areaData.area, metric, values)}
                                   disabled={!connected}
+                                  stat={stat}
                                 />
                               </Paper>
                             </Grid>
                             <Grid item xs={12} md={6}>
                               <Paper variant="outlined" sx={{ p: 2 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                                  Statistics
-                                </Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Statistics
+                                  </Typography>
+                                  {(() => {
+                                    const key = `${areaData.area}-${metric}`;
+                                    const timestamp = statsLastFetched.get(key);
+                                    return timestamp ? (
+                                      <Typography variant="caption" color="text.secondary">
+                                        Last Fetched: {formatLastFetched(timestamp)}
+                                      </Typography>
+                                    ) : null;
+                                  })()}
+                                </Box>
                                 {stat ? (
                                   <StatDisplay stat={stat} />
                                 ) : (
@@ -446,58 +502,158 @@ function ThresholdForm({
   area,
   metric,
   initialValues,
+  hasThreshold,
   onSave,
   disabled,
+  stat,
 }: {
   area: string;
   metric: string;
-  initialValues: number[];
+  initialValues: number[] | undefined;
+  hasThreshold: boolean;
   onSave: (values: number[]) => void;
   disabled: boolean;
+  stat?: StatInfo;
 }) {
-  const [values, setValues] = useState<number[]>(initialValues);
+  // Convert number[] to (number | null)[]
+  // -1 from protocol is a valid value, not unset
+  // Only null represents unset (when threshold data doesn't exist)
+  const convertToNullable = (vals: number[] | undefined): (number | null)[] => {
+    if (!vals) {
+      return [null, null, null, null, null, null];
+    }
+    return vals.map((v) => v); // Keep all values as-is, including -1
+  };
+
+  // Convert (number | null)[] back to number[] where null becomes -1 for protocol
+  // The protocol uses -1 to represent unset values
+  const convertFromNullable = (vals: (number | null)[]): number[] => {
+    return vals.map((v) => (v === null ? -1 : v));
+  };
+
+  const [values, setValues] = useState<(number | null)[]>(convertToNullable(initialValues));
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
-    setValues(initialValues);
-    setHasChanges(false);
-  }, [initialValues]);
+    // Only update from initialValues if there are no unsaved changes
+    // This prevents overwriting user's in-progress edits when new data arrives
+    if (!hasChanges) {
+      setValues(convertToNullable(initialValues));
+    }
+  }, [initialValues, hasChanges]);
 
   const handleChange = (idx: number, val: string) => {
-    const num = val === '' || val === '-' ? -1 : parseFloat(val);
-    if (isNaN(num) && val !== '' && val !== '-') return;
+    let newValue: number | null;
+    if (val === '' || val === '-') {
+      newValue = null; // Unset
+    } else {
+      const num = parseFloat(val);
+      if (isNaN(num)) return;
+      newValue = num; // Can be any number including -1
+    }
     const newValues = [...values];
-    newValues[idx] = num < 0 ? -1 : num;
+    newValues[idx] = newValue;
     setValues(newValues);
-    setHasChanges(JSON.stringify(newValues) !== JSON.stringify(initialValues));
+    setHasChanges(JSON.stringify(newValues) !== JSON.stringify(convertToNullable(initialValues)));
   };
 
   const handleSave = () => {
-    onSave(values);
+    // Check if any values are null (unset)
+    if (values.some((v) => v === null)) {
+      // Don't send command if any values are null
+      return;
+    }
+    // Convert back to number[] for the protocol (all values are set, no nulls)
+    onSave(values.map((v) => v!)); // Non-null assertion is safe here due to check above
     setHasChanges(false);
   };
+
+  const handleDiscard = () => {
+    // Reset values back to initial values
+    setValues(convertToNullable(initialValues));
+    setHasChanges(false);
+  };
+
+  // Get current value from stats (use max as the current measured value)
+  const getCurrentValue = (): number | null => {
+    if (!stat) return null;
+    // Use max as the current measured value, or min if max is -1
+    if (stat.max !== -1) return stat.max;
+    if (stat.min !== -1) return stat.min;
+    return null;
+  };
+
+  const currentValue = getCurrentValue();
+  const theme = useTheme();
+  const initialValuesNullable = convertToNullable(initialValues);
 
   return (
     <Stack spacing={1}>
       <Grid container spacing={1}>
-        {values.map((val, idx) => (
-          <Grid item xs={4} key={idx}>
-            <TextField
-              label={`T${idx + 1}`}
-              type="number"
-              value={val < 0 ? '' : val}
-              onChange={(e) => handleChange(idx, e.target.value)}
-              disabled={disabled}
-              size="small"
-              fullWidth
-              placeholder="-1"
-            />
-          </Grid>
-        ))}
+        {values.map((val, idx) => {
+          const isUnset = val === null;
+          const displayValue = isUnset && currentValue !== null ? currentValue : val === null ? '' : val;
+          const isEdited = val !== initialValuesNullable[idx];
+          const isDark = theme.palette.mode === 'dark';
+          const borderColor = isEdited ? (isDark ? '#ffd54f' : '#ffc107') : undefined;
+
+          return (
+            <Grid item xs={4} key={idx}>
+              <TextField
+                label={`T${idx + 1}`}
+                type="number"
+                value={displayValue}
+                onChange={(e) => handleChange(idx, e.target.value)}
+                disabled={disabled}
+                size="small"
+                fullWidth
+                placeholder={currentValue !== null ? currentValue.toString() : 'Unset'}
+                sx={{
+                  '& .MuiInputBase-input': {
+                    color: isUnset && currentValue !== null ? 'text.secondary' : 'text.primary',
+                    fontStyle: isUnset && currentValue !== null ? 'italic' : 'normal',
+                  },
+                  ...(isEdited && {
+                    '& .MuiOutlinedInput-root': {
+                      '& fieldset': {
+                        borderColor: borderColor,
+                        borderWidth: 2,
+                      },
+                      '&:hover fieldset': {
+                        borderColor: borderColor,
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: borderColor,
+                      },
+                    },
+                  }),
+                }}
+                helperText={isUnset && currentValue !== null ? 'Current value' : undefined}
+              />
+            </Grid>
+          );
+        })}
       </Grid>
-      <Button variant="contained" size="small" onClick={handleSave} disabled={!hasChanges || disabled} fullWidth>
-        Save Thresholds
-      </Button>
+      <Stack direction="row" spacing={1}>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={handleDiscard}
+          disabled={!hasChanges || disabled}
+          sx={{ flex: 1 }}
+        >
+          Discard
+        </Button>
+        <Button
+          variant="contained"
+          size="small"
+          onClick={handleSave}
+          disabled={!hasChanges || disabled || values.some((v) => v === null)}
+          sx={{ flex: 1 }}
+        >
+          Save Thresholds
+        </Button>
+      </Stack>
     </Stack>
   );
 }

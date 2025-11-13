@@ -6,6 +6,10 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
 import { AreaName } from '../utils/types';
 
 export default function Filters(p: any) {
@@ -22,7 +26,18 @@ export default function Filters(p: any) {
     setAggType,
     showBand,
     setShowBand,
+    bucketInterval,
+    setBucketInterval,
   } = p;
+
+  const bucketIntervalOptions = [
+    { label: '5s', value: 5000 },
+    { label: '10s', value: 10000 },
+    { label: '15s', value: 15000 },
+    { label: '30s', value: 30000 },
+    { label: '1min', value: 60000 },
+    { label: '5min', value: 300000 },
+  ];
   return (
     <Stack spacing={2} sx={{ p: 2 }}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -84,6 +99,21 @@ export default function Filters(p: any) {
           <ToggleButton value="true">Show Band</ToggleButton>
           <ToggleButton value="false">Hide Band</ToggleButton>
         </ToggleButtonGroup>
+        <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel>Bucket Interval</InputLabel>
+          <Select
+            value={bucketInterval}
+            label="Bucket Interval"
+            onChange={(e) => setBucketInterval(e.target.value as number)}
+          >
+            {bucketIntervalOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
       </Stack>
       <Stack spacing={1}>
         <Typography variant="subtitle2">Probes:</Typography>
