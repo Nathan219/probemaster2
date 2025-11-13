@@ -85,7 +85,14 @@ function App() {
   const theme = makeTheme(dark);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState<number>(() => {
+    const s = localStorage.getItem('pm_activeTab');
+    return s ? parseInt(s, 10) : 0;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pm_activeTab', activeTab.toString());
+  }, [activeTab]);
 
   // Serial
   const [port, setPort] = useState<SerialPort | null>(null);
