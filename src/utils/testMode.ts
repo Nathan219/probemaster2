@@ -37,6 +37,7 @@ export function generateGetAreasResponse(): string[] {
 export function generateGetStatsResponse(area: string, metric: string): string {
   const metricUpper = metric.toUpperCase();
   let min: number, max: number, min_o: number, max_o: number;
+  let responseMetric: string; // Metric to use in the response
   
   switch (metricUpper) {
     case 'CO2':
@@ -44,18 +45,21 @@ export function generateGetStatsResponse(area: string, metric: string): string {
       max = Math.round(randomRange(700, 1000));
       min_o = Math.round(randomRange(350, 450));
       max_o = Math.round(randomRange(950, 1100));
+      responseMetric = 'CO2';
       break;
     case 'TEMP':
       min = randomRange(20, 22);
       max = randomRange(23, 25);
       min_o = randomRange(19, 21);
       max_o = randomRange(25, 27);
+      responseMetric = 'TEMP';
       break;
     case 'HUM':
       min = Math.round(randomRange(40, 45));
       max = Math.round(randomRange(55, 60));
       min_o = Math.round(randomRange(35, 40));
       max_o = Math.round(randomRange(60, 65));
+      responseMetric = 'HUM';
       break;
     case 'SOUND':
     case 'DB':
@@ -63,38 +67,46 @@ export function generateGetStatsResponse(area: string, metric: string): string {
       max = Math.round(randomRange(60, 70));
       min_o = Math.round(randomRange(25, 35));
       max_o = Math.round(randomRange(70, 80));
+      responseMetric = 'DB'; // Use 'DB' instead of 'SOUND' to match app normalization
       break;
     default:
       min = -1;
       max = -1;
       min_o = -1;
       max_o = -1;
+      responseMetric = metricUpper;
   }
   
-  return `[UART1] WEBd: STAT: ${area} ${metricUpper} min:${min.toFixed(2)} max:${max.toFixed(2)} min_o:${min_o.toFixed(2)} max_o:${max_o.toFixed(2)}`;
+  return `[UART1] WEBd: STAT: ${area} ${responseMetric} min:${min.toFixed(2)} max:${max.toFixed(2)} min_o:${min_o.toFixed(2)} max_o:${max_o.toFixed(2)}`;
 }
 
 // Generate GET THRESHOLDS response
 export function generateGetThresholdsResponse(area: string, metric: string): string {
   const metricUpper = metric.toUpperCase();
   let baseValue: number;
+  let responseMetric: string; // Metric to use in the response
   
   switch (metricUpper) {
     case 'CO2':
       baseValue = 500;
+      responseMetric = 'CO2';
       break;
     case 'TEMP':
       baseValue = 22;
+      responseMetric = 'TEMP';
       break;
     case 'HUM':
       baseValue = 50;
+      responseMetric = 'HUM';
       break;
     case 'SOUND':
     case 'DB':
       baseValue = 50;
+      responseMetric = 'DB'; // Use 'DB' instead of 'SOUND' to match app normalization
       break;
     default:
       baseValue = 0;
+      responseMetric = metricUpper;
   }
   
   // Generate 6 threshold values with some variation
@@ -103,7 +115,7 @@ export function generateGetThresholdsResponse(area: string, metric: string): str
     return (baseValue * multiplier).toFixed(2);
   });
   
-  return `[UART1] WEBd: THRESHOLD ${area} ${metricUpper} ${values.join(' ')}`;
+  return `[UART1] WEBd: THRESHOLD ${area} ${responseMetric} ${values.join(' ')}`;
 }
 
 // Get list of probe IDs for test mode
