@@ -1044,10 +1044,24 @@ function App() {
     a.click();
     URL.revokeObjectURL(url);
 
-    await Promise.all([idbClear('samples'), idbClear('probes'), idbClear('locations')]);
+    await Promise.all([
+      idbClear('samples'),
+      idbClear('probes'),
+      idbClear('locations'),
+      idbClear('areasData'),
+      idbClear('pixelData'),
+      idbClear('timestamps'),
+    ]);
     setSamples([]);
     setProbes({});
     setLocations({});
+    setCommandCenterAreas(new Map());
+    setAreas(new Set());
+    setPixelData({});
+    setAreasLastFetched(null);
+    setPixelDataLastFetched(null);
+    setThresholdsLastFetched(new Map());
+    setStatsLastFetched(new Map());
     setActiveAreas(new Set(['All']));
     setActiveProbes(new Set());
   }
