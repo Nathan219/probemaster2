@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probemaster-frontend
+  labels:
+    app: probemaster-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: probemaster-frontend
+  template:
+    metadata:
+      labels:
+        app: probemaster-frontend
+    spec:
+      containers:
+      - name: web
+        image: us-central1-docker.pkg.dev/where-is-every-body/probemaster/frontend:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: VERSION
+          value: "v0.0.0-unknown"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+

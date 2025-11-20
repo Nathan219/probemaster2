@@ -1,0 +1,138 @@
+import React from 'react';
+
+import Stack from '@mui/material/Stack';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Chip from '@mui/material/Chip';
+import Typography from '@mui/material/Typography';
+import Divider from '@mui/material/Divider';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import { AreaName } from '../utils/types';
+
+export default function Filters(p: any) {
+  const {
+    areas,
+    activeAreas,
+    setActiveAreas,
+    metricVisibility,
+    setMetricVisibility,
+    probes,
+    activeProbes,
+    setActiveProbes,
+    aggType,
+    setAggType,
+    showBand,
+    setShowBand,
+    bucketInterval,
+    setBucketInterval,
+  } = p;
+
+  const bucketIntervalOptions = [
+    { label: '5s', value: 5000 },
+    { label: '10s', value: 10000 },
+    { label: '15s', value: 15000 },
+    { label: '30s', value: 30000 },
+    { label: '1min', value: 60000 },
+    { label: '5min', value: 300000 },
+  ];
+  return (
+    <Stack spacing={2} sx={{ p: 2 }}>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+        <Typography variant="subtitle2">Areas:</Typography>
+        {['All', ...Object.values(AreaName)].map((a: string) => {
+          // Areas are now stored with normalized names, so direct check should work
+          const hasData = a === 'All' || areas.includes(a);
+          return (
+            <Chip
+              key={a}
+              label={a}
+              color={activeAreas.has(a) ? 'primary' : 'default'}
+              variant={activeAreas.has(a) ? 'filled' : 'outlined'}
+              onClick={() => {
+                const next = new Set(activeAreas);
+                if (a === 'All') {
+                  next.clear();
+                  next.add('All');
+                } else {
+                  // When clicking an individual area, clear all others and select only this one
+                  next.clear();
+                  next.add(a);
+                }
+                setActiveAreas(next);
+              }}
+              sx={{
+                opacity: hasData ? 1 : 0.5,
+              }}
+            />
+          );
+        })}
+      </Stack>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+        <Typography variant="subtitle2">Metrics:</Typography>
+        {(['CO2', 'Temp', 'Hum', 'Sound'] as const).map((m) => (
+          <Chip
+            key={m}
+            label={m}
+            color={metricVisibility[m] ? 'secondary' : 'default'}
+            variant={metricVisibility[m] ? 'filled' : 'outlined'}
+            onClick={() => setMetricVisibility((prev: any) => ({ ...prev, [m]: !prev[m] }))}
+          />
+        ))}
+      </Stack>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+        <Typography variant="subtitle2">Aggregation (Summary):</Typography>
+        <ToggleButtonGroup exclusive value={aggType} onChange={(_: any, v: any) => v && setAggType(v)} size="small">
+          <ToggleButton value="avg">Average</ToggleButton>
+          <ToggleButton value="min">Min</ToggleButton>
+          <ToggleButton value="max">Max</ToggleButton>
+        </ToggleButtonGroup>
+        <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+        <ToggleButtonGroup
+          exclusive
+          value={String(Boolean(showBand))}
+          onChange={(_: any, v: any) => setShowBand(v === 'true')}
+          size="small"
+        >
+          <ToggleButton value="true">Show Band</ToggleButton>
+          <ToggleButton value="false">Hide Band</ToggleButton>
+        </ToggleButtonGroup>
+        <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel>Bucket Interval</InputLabel>
+          <Select
+            value={bucketInterval}
+            label="Bucket Interval"
+            onChange={(e) => setBucketInterval(e.target.value as number)}
+          >
+            {bucketIntervalOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Stack>
+      <Stack spacing={1}>
+        <Typography variant="subtitle2">Probes:</Typography>
+        <Stack direction="row" spacing={1} flexWrap="wrap">
+          {probes.map((p: any) => (
+            <Chip
+              key={p.id}
+              label={`${p.id} (${p.area})`}
+              color={activeProbes.has(p.id) ? 'primary' : 'default'}
+              variant={activeProbes.has(p.id) ? 'filled' : 'outlined'}
+              onClick={() => {
+                const next = new Set(activeProbes);
+                next.has(p.id) ? next.delete(p.id) : next.add(p.id);
+                setActiveProbes(next);
+              }}
+            />
+          ))}
+        </Stack>
+      </Stack>
+    </Stack>
+  );
+}

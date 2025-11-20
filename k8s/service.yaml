@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: probemaster-frontend
+  labels:
+    app: probemaster-frontend
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: probemaster-frontend
+
